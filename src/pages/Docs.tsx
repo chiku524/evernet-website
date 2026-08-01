@@ -4,26 +4,32 @@ import { WALLET_CATALOGUE } from '../lib/wallet'
 import { formatBytes } from '../lib/format'
 import { apiBase } from '../lib/api'
 
-const toc = [
+const tocGuide = [
   { id: 'overview', label: 'What is Evernet?' },
   { id: 'quickstart', label: 'Quick start' },
   { id: 'wallet', label: 'Supported wallets' },
   { id: 'mobile', label: 'Using Evernet on mobile' },
   { id: 'networks', label: 'Testnet vs Mainnet' },
   { id: 'vault', label: 'Using the vault' },
+  { id: 'passphrase', label: 'Vault passphrase' },
   { id: 'plans', label: 'Storage plans' },
   { id: 'how', label: 'How it works' },
   { id: 'security', label: 'Security' },
+]
+
+const tocDev = [
   { id: 'api', label: 'Developer API' },
   { id: 'api-auth', label: 'API authentication' },
   { id: 'sdk', label: 'TypeScript SDK' },
-  { id: 'passphrase', label: 'Vault passphrase' },
   { id: 'api-keys', label: 'API keys' },
   { id: 'projects', label: 'Project pools' },
   { id: 'labs', label: 'Reference app' },
   { id: 'api-reference', label: 'API reference' },
   { id: 'api-examples', label: 'API examples' },
   { id: 'api-cors', label: 'CORS & access' },
+]
+
+const tocMore = [
   { id: 'faq', label: 'FAQ' },
   { id: 'links', label: 'Links & contracts' },
 ]
@@ -41,6 +47,7 @@ export default function Docs() {
           <nav className="docs-top-nav" aria-label="Site">
             <Link to="/docs">Docs</Link>
             <a href="#api">API</a>
+            <Link to="/labs/notes">Labs</Link>
             <Link to="/dashboard">Vault</Link>
             <Link className="docs-top-cta" to="/dashboard">
               Open vault
@@ -53,7 +60,23 @@ export default function Docs() {
         <aside className="docs-toc" aria-label="On this page">
           <p className="docs-toc-label">Guide</p>
           <ul>
-            {toc.map((item) => (
+            {tocGuide.map((item) => (
+              <li key={item.id}>
+                <a href={`#${item.id}`}>{item.label}</a>
+              </li>
+            ))}
+          </ul>
+          <p className="docs-toc-label">Developers</p>
+          <ul>
+            {tocDev.map((item) => (
+              <li key={item.id}>
+                <a href={`#${item.id}`}>{item.label}</a>
+              </li>
+            ))}
+          </ul>
+          <p className="docs-toc-label">More</p>
+          <ul>
+            {tocMore.map((item) => (
               <li key={item.id}>
                 <a href={`#${item.id}`}>{item.label}</a>
               </li>
@@ -65,20 +88,22 @@ export default function Docs() {
           <p className="eyebrow">Documentation</p>
           <h1>Evernet docs</h1>
           <p className="docs-lead">
-            Connect a Stellar wallet, buy capacity with XLM, store encrypted files — and integrate the same storage
-            surface from your own apps via the public HTTP API.
+            Connect a Stellar wallet, unlock a vault passphrase, buy capacity with XLM, and store encrypted files — or
+            integrate the same surface from apps via <code>evernet-sdk</code> and the public HTTP API.
           </p>
 
           <section id="overview">
             <h2>What is Evernet?</h2>
             <p>
-              Evernet is a <strong>wallet-linked storage service</strong> built for the Stellar ecosystem. Your Stellar
-              address is your storage identity. Quota and object registrations live on a Soroban smart contract; file
-              bytes are encrypted in your browser and stored on the Evernet storage network.
+              Evernet is a <strong>wallet-linked object storage service</strong> for the Stellar ecosystem. Your Stellar
+              address is your storage identity. Quota and content-hash registrations live on a Soroban smart contract;
+              file bytes are encrypted client-side and stored as ciphertext on the Evernet storage API (Vercel Blob in
+              production).
             </p>
             <p>
-              Stellar itself does not hold the files — it holds the control plane: who paid, how much space they have, and
-              which content hashes belong to which wallet.
+              Stellar does not hold the files — it holds the control plane: who paid, how much space they have, and which
+              content hashes belong to which wallet. Folders, filenames, API keys, and project soft caps live off-chain on
+              the API.
             </p>
           </section>
 
@@ -100,7 +125,11 @@ export default function Docs() {
                 Set your wallet to <strong>Testnet</strong> for free testing (Friendbot gives you test XLM), or{' '}
                 <strong>Public</strong> for Mainnet.
               </li>
-              <li>Upload files (encrypted automatically) or buy more capacity with XLM.</li>
+              <li>
+                On first upload or download, unlock a <a href="#passphrase">vault passphrase</a> (personal secret
+                recommended, or convenience mode).
+              </li>
+              <li>Upload files (encrypted in-browser) or buy more capacity with XLM.</li>
             </ol>
           </section>
 
@@ -197,14 +226,14 @@ export default function Docs() {
                 stays cheap and private from the public ledger.
               </li>
               <li>
-                <strong>Upload / drag-and-drop</strong> — files are encrypted client-side (AES-GCM), then sent as
-                ciphertext to the Evernet API into the folder you’re viewing. Dropping a directory from your computer
-                (or using Upload folder) preserves the relative tree. A content hash is registered to your wallet on
-                Soroban.
+                <strong>Upload / drag-and-drop</strong> — after you unlock a passphrase, files are encrypted client-side
+                (AES-GCM), then sent as ciphertext into the folder you’re viewing. Dropping a directory (or Upload
+                folder) preserves the relative tree. A content hash is registered to your wallet on Soroban when
+                on-chain mode is enabled.
               </li>
               <li>
-                <strong>Download</strong> — ciphertext is fetched and decrypted in your browser with a key derived from
-                your wallet address (v1 helper). Use the same Stellar address to recover files on another device.
+                <strong>Download</strong> — ciphertext is fetched and decrypted in your browser with the same passphrase
+                used at upload. Use the same Stellar address <em>and</em> passphrase on another device to recover files.
               </li>
               <li>
                 <strong>Rename & move</strong> — select a file or folder to rename it, or move a file into another
@@ -218,7 +247,25 @@ export default function Docs() {
                 <strong>Quota meter</strong> — shows used vs total bytes from your on-chain / API profile (includes the
                 free 5 GB base tier). Folders themselves do not consume quota.
               </li>
+              <li>
+                <strong>Developers</strong> — with nothing selected, the protocol panel manages{' '}
+                <a href="#projects">project pools</a> and <a href="#api-keys">API keys</a> for server integrations.
+              </li>
             </ul>
+          </section>
+
+          <section id="passphrase">
+            <h2>Vault passphrase</h2>
+            <p>
+              Uploads and downloads in the vault ask you to unlock encryption. Choose a personal passphrase (min 8
+              characters) or convenience mode (wallet-derived helper for demos). Optionally remember on this device —
+              stored only in the browser, never sent to the API.
+            </p>
+            <p>
+              Files encrypted with different passphrases cannot be mixed; a wrong passphrase fails decryption. Prefer a
+              strong personal secret over convenience mode for real data. Disconnecting clears an unlocked session
+              passphrase from memory (remembered secrets stay until you clear site data).
+            </p>
           </section>
 
           <section id="plans">
@@ -274,8 +321,8 @@ export default function Docs() {
                 <code>credit_purchase</code>
               </li>
               <li>
-                <strong>Store</strong> — encrypted blobs go to the Evernet storage API; hashes/sizes are registered
-                on-chain
+                <strong>Store</strong> — client encrypts with your vault passphrase; ciphertext goes to the Evernet
+                storage API; hashes/sizes register on-chain
               </li>
             </ol>
           </section>
@@ -342,7 +389,8 @@ export default function Docs() {
               <li>
                 <strong>API key</strong> — create from the vault (wallet session), then{' '}
                 <code>Authorization: Bearer evn_live_…</code> or <code>X-Evernet-Api-Key</code>. Keys share the wallet’s
-                quota; create/revoke requires a JWT, not another key.
+                quota (and optional <a href="#projects">project</a> soft cap). Create/revoke requires a JWT, not another
+                key.
               </li>
             </ol>
           </section>
@@ -350,8 +398,12 @@ export default function Docs() {
           <section id="sdk">
             <h2>TypeScript SDK</h2>
             <p>
-              Package <code>evernet-sdk</code> wraps auth, folders, quota, and the canonical encrypt → upload → hash
-              path. Source lives in this repo under <code>sdk/</code>.
+              Package{' '}
+              <a href="https://www.npmjs.com/package/evernet-sdk" target="_blank" rel="noreferrer">
+                evernet-sdk
+              </a>{' '}
+              wraps auth, folders, quota, projects, API keys, and the canonical encrypt → upload → hash path. Source:{' '}
+              <code>sdk/</code>.
             </p>
             <pre className="docs-code">
               <code>{`import { EvernetClient, walletPassphrase } from 'evernet-sdk'
@@ -363,38 +415,24 @@ const client = new EvernetClient({
 // Wallet signs the challenge (never submit the tx)
 await client.loginWithSigner(address, async (xdr, network) => signWithWallet(xdr, network))
 
-// Encrypt client-side → put ciphertext → content hash (+ optional Soroban registrationTx)
+// Prefer a strong user passphrase; walletPassphrase() is a demo convenience helper
+const passphrase = 'your-strong-secret' // or walletPassphrase(address)
+
 const { object } = await client.encryptAndUpload({
   data: new TextEncoder().encode('secret notes'),
   name: 'notes.txt',
   mimeType: 'text/plain',
   folder: 'docs',
-  passphrase: walletPassphrase(address), // prefer a strong user secret in production
+  passphrase,
 })
 
 console.log(object.hash, object.registrationTx)
 
-const plain = await client.downloadAndDecrypt(object.hash, walletPassphrase(address))`}</code>
+const plain = await client.downloadAndDecrypt(object.hash, passphrase)`}</code>
             </pre>
             <p>
-              Runnable example:{' '}
+              Install: <code>npm install evernet-sdk</code>. Runnable example:{' '}
               <code>npm run sdk:example -- {API_BASE}</code>
-            </p>
-            <p>
-              Install: <code>npm install evernet-sdk</code>. Source: <code>sdk/</code>.
-            </p>
-          </section>
-
-          <section id="passphrase">
-            <h2>Vault passphrase</h2>
-            <p>
-              Uploads and downloads in the vault ask you to unlock encryption. Choose a personal passphrase (min 8
-              characters) or convenience mode. Optionally remember on this device (stored in the browser — never sent to
-              the API).
-            </p>
-            <p>
-              Files encrypted with different passphrases cannot be mixed; wrong passphrase fails decryption. Prefer a
-              strong personal secret over convenience mode for real data.
             </p>
           </section>
 
@@ -402,7 +440,8 @@ const plain = await client.downloadAndDecrypt(object.hash, walletPassphrase(addr
             <h2>API keys</h2>
             <p>
               Open the <Link to="/dashboard">vault</Link>, deselect any file/folder so the protocol panel shows, then
-              create a key under <strong>Developer API keys</strong>. The secret is shown once.
+              create a key under <strong>Developer API keys</strong>. Optionally bind the key to a project. The secret is
+              shown once.
             </p>
             <pre className="docs-code">
               <code>{`curl -s ${API_BASE}/usage \\
@@ -535,27 +574,47 @@ curl -X POST ${API_BASE}/keys \\
                       <code>/usage</code>
                     </td>
                     <td>Bearer</td>
-                    <td>Profile + auth type + rate-limit metadata</td>
+                    <td>Profile + auth type + optional project usage + rate limits</td>
                   </tr>
                   <tr>
                     <td>
-                      <code>GET/POST/DELETE</code>
+                      <code>GET</code> / <code>POST</code>
                     </td>
                     <td>
                       <code>/keys</code>
                     </td>
                     <td>JWT</td>
-                    <td>Create / list / revoke API keys (optional projectId)</td>
+                    <td>List / create API keys (optional <code>projectId</code>)</td>
                   </tr>
                   <tr>
                     <td>
-                      <code>GET/POST/PATCH/DELETE</code>
+                      <code>DELETE</code>
+                    </td>
+                    <td>
+                      <code>/keys/:id</code>
+                    </td>
+                    <td>JWT</td>
+                    <td>Revoke API key</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>GET</code> / <code>POST</code>
                     </td>
                     <td>
                       <code>/projects</code>
                     </td>
                     <td>JWT</td>
-                    <td>Project billing pools + soft caps</td>
+                    <td>List / create project soft-cap pools</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>PATCH</code> / <code>DELETE</code>
+                    </td>
+                    <td>
+                      <code>/projects/:id</code>
+                    </td>
+                    <td>JWT</td>
+                    <td>Update or archive a project</td>
                   </tr>
                   <tr>
                     <td>
@@ -710,16 +769,17 @@ async function upload(token: string, bytes: Blob, name: string, folder = '') {
             </p>
             <ul>
               <li>
-                <strong>Recommended for third-party apps:</strong> call the API from your backend (no CORS), after the
-                user signs a challenge in your frontend.
+                <strong>Recommended for third-party apps:</strong> call the API from your backend (no CORS) with an{' '}
+                <a href="#api-keys">API key</a>, or after the user signs a challenge in your frontend and you forward the
+                JWT.
               </li>
               <li>
-                <strong>First-party browser apps:</strong> request an origin allowlist if you need direct browser access
-                from another domain.
+                <strong>First-party browser apps on other domains:</strong> request an origin allowlist (
+                <code>CORS_ORIGIN</code>) if you need direct browser access.
               </li>
               <li>
-                <strong>API keys:</strong> available now for server agents (see <a href="#api-keys">API keys</a>).
-                Project-level billing pools remain on the roadmap.
+                <strong>Project pools:</strong> available now for soft-cap metering per app key (see{' '}
+                <a href="#projects">Project pools</a>).
               </li>
             </ul>
           </section>
@@ -748,21 +808,31 @@ async function upload(token: string, bytes: Blob, name: string, folder = '') {
               <div>
                 <dt>Will the same wallet work on another computer?</dt>
                 <dd>
-                  Yes — connect the same Stellar address, from any supported wallet. Quota is on-chain; objects are
-                  served by the Evernet API for that address.
+                  Yes — connect the same Stellar address from any supported wallet. Quota is on-chain; objects are served
+                  by the Evernet API for that address. You still need the same vault passphrase to decrypt files (unless
+                  you used convenience mode, which is derived from the address).
+                </dd>
+              </div>
+              <div>
+                <dt>I forgot my passphrase — can Evernet recover my files?</dt>
+                <dd>
+                  No. Passphrases never leave your browser. Without the passphrase (or convenience mode on the same
+                  address), ciphertext cannot be decrypted.
                 </dd>
               </div>
               <div>
                 <dt>What if my upload fails with “insufficient quota”?</dt>
                 <dd>
-                  Buy a storage plan with XLM, wait for confirmation, then retry. Free tier starts at 5 GB.
+                  Buy a storage plan with XLM, wait for confirmation, then retry. Free tier starts at 5 GB. If you use a
+                  project-bound API key, you may also hit that project’s soft cap (HTTP 402).
                 </dd>
               </div>
               <div>
                 <dt>Is this Mainnet production storage?</dt>
                 <dd>
-                  Testnet is the primary demo network today. Mainnet payments are supported when your wallet and the
-                  treasury are configured for Public Network. Full decentralized node mesh remains on the roadmap.
+                  Testnet is the primary network today (<code>GET /config/public</code> reports{' '}
+                  <code>network: testnet</code>). Mainnet payments are supported when your wallet and the treasury are
+                  configured for Public Network. A broader decentralized node mesh remains on the roadmap.
                 </dd>
               </div>
               <div>
@@ -770,7 +840,7 @@ async function upload(token: string, bytes: Blob, name: string, folder = '') {
                 <dd>
                   For encrypted object storage tied to a Stellar wallet — yes, via the{' '}
                   <a href="#api">Developer API</a> and <a href="#sdk">evernet-sdk</a>. It is not a SQL database or a
-                  drop-in AWS SDK. Auth: wallet JWT or API keys.
+                  drop-in AWS SDK. Auth: wallet JWT or API keys; optional project soft caps for metering.
                 </dd>
               </div>
             </dl>
@@ -792,6 +862,12 @@ async function upload(token: string, bytes: Blob, name: string, folder = '') {
                 OpenAPI:{' '}
                 <a href={`${API_BASE}/openapi.json`} target="_blank" rel="noreferrer">
                   {API_BASE}/openapi.json
+                </a>
+              </li>
+              <li>
+                npm SDK:{' '}
+                <a href="https://www.npmjs.com/package/evernet-sdk" target="_blank" rel="noreferrer">
+                  evernet-sdk
                 </a>
               </li>
               <li>

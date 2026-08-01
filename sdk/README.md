@@ -2,6 +2,8 @@
 
 TypeScript client for the [Evernet Storage API](https://evernet.tech/docs#api) — wallet-linked, client-encrypted object storage on Stellar.
 
+**npm:** [evernet-sdk](https://www.npmjs.com/package/evernet-sdk) · **Docs:** [evernet.tech/docs#sdk](https://evernet.tech/docs#sdk) · **Demo:** [evernet.tech/labs/notes](https://evernet.tech/labs/notes)
+
 ## Install
 
 ```bash
@@ -22,28 +24,40 @@ const client = new EvernetClient({
 // 1) Wallet auth (sign challenge in browser / with Keypair — do not submit)
 await client.loginWithSigner(address, async (xdr, network) => signWithWallet(xdr, network))
 
-// 2) Encrypt locally, upload ciphertext, get content hash
+// 2) Encrypt locally, upload ciphertext, get content hash (+ optional Soroban registrationTx)
+const passphrase = 'your-strong-secret' // prefer this over walletPassphrase(address)
 const { object } = await client.encryptAndUpload({
   data: new TextEncoder().encode('secret notes'),
   name: 'notes.txt',
   mimeType: 'text/plain',
   folder: 'docs',
-  passphrase: walletPassphrase(address), // prefer a strong user secret in production
+  passphrase,
 })
 
 console.log(object.hash, object.registrationTx)
+const plain = await client.downloadAndDecrypt(object.hash, passphrase)
 ```
 
-## API keys (servers)
+`walletPassphrase(address)` is a demo convenience helper that matches the vault’s “convenience mode.” Prefer a strong user-chosen secret in production.
 
-Create keys with a wallet JWT (vault UI or `createApiKey`), then:
+## API keys & project pools
+
+Create keys (and optional project soft caps) with a wallet JWT in the [vault](https://evernet.tech/dashboard) or via the SDK, then:
 
 ```ts
 const server = new EvernetClient({
   baseUrl: 'https://evernet-storage-api.vercel.app',
   token: process.env.EVERNET_API_KEY!, // evn_live_…
 })
+
+await server.getUsage() // profile + auth + project metering when key is project-bound
 await server.list()
+```
+
+```ts
+// wallet JWT session required for management:
+const project = await client.createProject({ name: 'mobile-app', maxBytes: 2 * 1024 ** 3 })
+const key = await client.createApiKey('mobile-prod', project.id)
 ```
 
 ## Example
@@ -53,13 +67,4 @@ cd sdk && npm install && npm run build
 npm run example:encrypt-upload
 ```
 
-## Publish
-
-```bash
-npm login
-cd sdk
-npm publish
-```
-
-Docs: https://evernet.tech/docs#sdk · OpenAPI: https://evernet-storage-api.vercel.app/openapi.json  
-Reference app: https://evernet.tech/labs/notes
+OpenAPI: https://evernet-storage-api.vercel.app/openapi.json

@@ -33,8 +33,9 @@ npm run sdk:example -- https://evernet-storage-api.vercel.app
 |-------|------|
 | **Any Stellar wallet** | User identity (`G…` address), via [Stellar Wallets Kit](https://stellarwalletskit.dev/) |
 | **Soroban `storage-market`** | On-chain profile: quota, used bytes, lease, object registrations, payment dedupe |
-| **Storage API** | SEP-10 style auth, encrypted blob store, Horizon payment verify → `credit_purchase` |
-| **Dashboard** | Connect wallet, buy XLM plans, encrypt/upload/download |
+| **Storage API** | SEP-10 / API-key auth, blob store, folders, projects, Horizon → `credit_purchase` |
+| **Dashboard + Labs** | Vault UI, passphrase unlock, XLM plans, API keys; `/labs/notes` SDK demo |
+| **evernet-sdk** | Published npm client (`encryptAndUpload`, folders, keys, projects) |
 
 Stellar does **not** store file bytes. It stores the control plane (who paid, how much quota, which content hashes). Ciphertext lives on the Evernet storage API, keyed by wallet.
 
@@ -101,7 +102,8 @@ Auth is a SEP-10 style challenge rather than `signMessage`, because only a subse
 ```
 contracts/storage-market/   Soroban Rust contract
 storage-api/                Express API (local + Vercel)
-src/                        Vite React site + dashboard
+sdk/                        evernet-sdk (npm)
+src/                        Vite React site, vault, docs, labs
 ```
 
 ## Env
@@ -120,7 +122,8 @@ Serverless instances get a fresh `/tmp` on every request, so the API selects a s
 
 ## Security (v1)
 
-- Client-side AES-GCM before upload (key derived from wallet address passphrase helper — replace with user passphrase for production)
-- API auth via a SEP-10 style challenge transaction, verified against both the server key and the user's address
+- Client-side AES-GCM before upload; vault prompts for a personal passphrase (recommended) or wallet-derived convenience mode
+- API auth via SEP-10 style challenge JWT and/or `evn_live_…` API keys (optional project soft caps)
 - Payment hashes cannot be credited twice (`Payment` entries on-chain + API mirror)
+- Internal blob locators (`blobRef`) are never returned to API clients
 - CORS allows evernet.tech, Vercel previews and localhost; anything else is rejected

@@ -75,6 +75,10 @@
   padding: 0.25rem 0;
 }
 
+.docs-toc-label + ul + .docs-toc-label {
+  margin-top: 1.15rem;
+}
+
 .docs-toc-label {
   font-size: 0.72rem;
   font-weight: 600;
