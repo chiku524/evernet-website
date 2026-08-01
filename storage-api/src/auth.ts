@@ -1,10 +1,20 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { Request, Response, NextFunction } from 'express'
-import { Keypair } from '@stellar/stellar-sdk'
+import {
+  Account,
+  Keypair,
+  Operation,
+  StrKey,
+  Transaction,
+  TransactionBuilder,
+} from '@stellar/stellar-sdk'
 import { config } from './config.js'
-import { consumeChallenge, createChallenge } from './store.js'
 
 export type AuthedRequest = Request & { wallet?: string }
+
+const CHALLENGE_TTL_SECONDS = 300
+const HOME_DOMAIN = 'evernet.tech'
+const DATA_NAME = `${HOME_DOMAIN} auth`
 
 function b64url(input: Buffer | string): string {
   const buf = typeof input === 'string' ? Buffer.from(input) : input
@@ -57,52 +67,91 @@ export function requireWallet(req: AuthedRequest, res: Response, next: NextFunct
   next()
 }
 
-function tryVerify(address: string, messageBytes: Buffer, signatureBase64: string): boolean {
-  try {
-    const kp = Keypair.fromPublicKey(address)
-    const sig = Buffer.from(signatureBase64, 'base64')
-    if (kp.verify(messageBytes, sig)) return true
-    // Some wallets sign the sha256 digest
-    const digest = createHash('sha256').update(messageBytes).digest()
-    if (kp.verify(digest, sig)) return true
-    return false
-  } catch {
-    return false
-  }
+/**
+ * Dedicated server keypair for challenge transactions, derived from the API
+ * secret so it works without provisioning another Stellar account. The account
+ * is never funded: SEP-10 challenges use sequence number 0 and are never
+ * submitted to the network.
+ */
+function serverKeypair(): Keypair {
+  const seed = createHash('sha256').update(`${config.jwtSecret}:sep10`).digest()
+  return Keypair.fromRawEd25519Seed(seed)
 }
 
-/** Freighter signMessage returns base64 signature of the message bytes. */
-export function verifyFreighterMessage(
-  address: string,
-  message: string,
-  signatureBase64: string,
-): boolean {
-  const raw = Buffer.from(message, 'utf8')
-  if (tryVerify(address, raw, signatureBase64)) return true
-  // SEP-53 style prefix used by some Stellar message signers
-  const sep53 = Buffer.from(`Stellar Signed Message:\n${message}`, 'utf8')
-  if (tryVerify(address, sep53, signatureBase64)) return true
-  return false
+export function isStellarAddress(address: string): boolean {
+  return StrKey.isValidEd25519PublicKey(address)
 }
 
-export function issueChallenge(address: string) {
-  return createChallenge(address)
+/**
+ * SEP-10 style challenge. Every Stellar wallet can sign a transaction, while
+ * only a subset implement arbitrary message signing, so the challenge is a
+ * throwaway sequence-0 transaction rather than a plain string.
+ */
+export function buildChallenge(address: string): { transaction: string; network: string } {
+  if (!isStellarAddress(address)) throw new Error('Valid Stellar address required')
+
+  const server = serverKeypair()
+  const nonce = randomBytes(48).toString('base64')
+  const now = Math.floor(Date.now() / 1000)
+
+  const tx = new TransactionBuilder(new Account(server.publicKey(), '-1'), {
+    fee: '100',
+    networkPassphrase: config.networkPassphrase,
+    timebounds: { minTime: now, maxTime: now + CHALLENGE_TTL_SECONDS },
+  })
+    .addOperation(
+      Operation.manageData({ name: DATA_NAME, value: nonce, source: address }),
+    )
+    .build()
+
+  tx.sign(server)
+  return { transaction: tx.toXDR(), network: config.networkPassphrase }
 }
 
 export function verifyChallengeAndIssueToken(input: {
   address: string
-  challengeId: string
-  message: string
-  signature: string
+  signedTransaction: string
 }): string {
-  if (!consumeChallenge(input.challengeId, input.address)) {
-    throw new Error('Challenge invalid or expired')
+  if (!isStellarAddress(input.address)) throw new Error('Valid Stellar address required')
+  if (!input.signedTransaction) throw new Error('Signed challenge required')
+
+  let tx: Transaction
+  try {
+    tx = new Transaction(input.signedTransaction, config.networkPassphrase)
+  } catch {
+    throw new Error('Challenge is not a valid transaction for this network')
   }
-  if (!input.message.includes(input.challengeId) || !input.message.includes(input.address)) {
-    throw new Error('Message does not match challenge')
+
+  if (tx.sequence !== '0') throw new Error('Challenge must use sequence 0')
+
+  const server = serverKeypair()
+  if (tx.source !== server.publicKey()) throw new Error('Challenge was not issued by this server')
+
+  const bounds = tx.timeBounds
+  const now = Math.floor(Date.now() / 1000)
+  if (!bounds) throw new Error('Challenge is missing timebounds')
+  if (now < Number(bounds.minTime) - 30 || now > Number(bounds.maxTime)) {
+    throw new Error('Challenge expired, please retry')
   }
-  if (!verifyFreighterMessage(input.address, input.message, input.signature)) {
-    throw new Error('Invalid wallet signature')
+
+  const [op] = tx.operations
+  if (!op || op.type !== 'manageData' || op.name !== DATA_NAME) {
+    throw new Error('Unexpected challenge payload')
   }
+  if (op.source !== input.address) throw new Error('Challenge was issued for a different wallet')
+
+  const hash = tx.hash()
+  const signedBy = (kp: Keypair) =>
+    tx.signatures.some((sig) => {
+      try {
+        return kp.verify(hash, sig.signature())
+      } catch {
+        return false
+      }
+    })
+
+  if (!signedBy(server)) throw new Error('Server signature missing or altered')
+  if (!signedBy(Keypair.fromPublicKey(input.address))) throw new Error('Invalid wallet signature')
+
   return signToken(input.address)
 }

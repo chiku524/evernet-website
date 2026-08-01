@@ -311,6 +311,25 @@
   margin-top: 0.5rem;
 }
 
+.dash-empty-hint {
+  max-width: 42ch;
+  margin-inline: auto;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.dash-empty-error {
+  max-width: 42ch;
+  margin-inline: auto;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid rgba(196, 107, 58, 0.35);
+  border-radius: 6px;
+  background: rgba(196, 107, 58, 0.08);
+  color: #a33d2d;
+  font-size: 0.85rem;
+}
+
 .dash-table-wrap {
   overflow: auto;
   border: 1px solid var(--line);

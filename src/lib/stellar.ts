@@ -6,7 +6,7 @@ import {
   Operation,
   TransactionBuilder,
 } from '@stellar/stellar-sdk'
-import freighterApi from '@stellar/freighter-api'
+import { assertWalletNetwork, signTransactionXdr } from './wallet'
 
 export type StellarNetworkId = 'testnet' | 'public'
 
@@ -118,53 +118,6 @@ export function explorerContractUrl(
   return `https://stellar.expert/explorer/${slug}/contract/${contractId}`
 }
 
-export const FREIGHTER_DOWNLOAD_URL = 'https://www.freighter.app/'
-
-export async function isFreighterInstalled(): Promise<boolean> {
-  try {
-    const result = await freighterApi.isConnected()
-    return Boolean(result.isConnected)
-  } catch {
-    return false
-  }
-}
-
-/** If Freighter is missing, open the download page and throw a clear error. */
-export async function ensureFreighterInstalled(): Promise<void> {
-  const installed = await isFreighterInstalled()
-  if (installed) return
-  window.open(FREIGHTER_DOWNLOAD_URL, '_blank', 'noopener,noreferrer')
-  throw new Error('Freighter is not installed. We opened the download page — install it, then return here to connect.')
-}
-
-export async function connectFreighter(): Promise<string> {
-  await ensureFreighterInstalled()
-  const access = await freighterApi.requestAccess()
-  if (access.error) throw new Error(access.error)
-  const { address, error } = await freighterApi.getAddress()
-  if (error) throw new Error(error)
-  if (!address) throw new Error('No address returned from Freighter')
-  saveAddress(address)
-  return address
-}
-
-export async function getFreighterAddress(): Promise<string | null> {
-  try {
-    const allowed = await freighterApi.isAllowed()
-    if (!allowed.isAllowed) return loadSavedAddress()
-    const { address, error } = await freighterApi.getAddress()
-    if (error || !address) return loadSavedAddress()
-    saveAddress(address)
-    return address
-  } catch {
-    return loadSavedAddress()
-  }
-}
-
-export async function disconnectFreighterLocal() {
-  saveAddress(null)
-}
-
 export async function ensureReceiverFunded(network: StellarNetworkId, receiver = DEFAULT_RECEIVER) {
   const cfg = getNetworkConfig(network)
   const server = new Horizon.Server(cfg.horizonUrl)
@@ -206,19 +159,12 @@ export type PaymentResult = {
 export async function purchaseStoragePlan(
   plan: StoragePlan,
   network: StellarNetworkId,
+  address: string,
   receiver = DEFAULT_RECEIVER,
 ): Promise<PaymentResult> {
   const cfg = getNetworkConfig(network)
-  const address = await connectFreighter()
 
-  const net = await freighterApi.getNetworkDetails()
-  if (net.error) throw new Error(net.error)
-  if (net.networkPassphrase && net.networkPassphrase !== cfg.passphrase) {
-    throw new Error(
-      `Freighter is set to ${net.network || 'a different network'}. Switch Freighter to Stellar ${cfg.label} and try again.`,
-    )
-  }
-
+  await assertWalletNetwork(network)
   await ensureReceiverFunded(network, receiver)
 
   const server = new Horizon.Server(cfg.horizonUrl)
@@ -241,14 +187,8 @@ export async function purchaseStoragePlan(
     .setTimeout(180)
     .build()
 
-  const signed = await freighterApi.signTransaction(tx.toXDR(), {
-    networkPassphrase: cfg.passphrase,
-    address,
-  })
-  if (signed.error) throw new Error(signed.error)
-  if (!signed.signedTxXdr) throw new Error('Freighter did not return a signed transaction')
-
-  const parsed = TransactionBuilder.fromXDR(signed.signedTxXdr, cfg.passphrase)
+  const signedXdr = await signTransactionXdr(tx.toXDR(), address, network)
+  const parsed = TransactionBuilder.fromXDR(signedXdr, cfg.passphrase)
   const submit = await server.submitTransaction(parsed)
 
   if (!submit.successful) {

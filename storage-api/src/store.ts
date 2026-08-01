@@ -1,7 +1,6 @@
-import { createHash, randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
-import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { config } from './config.js'
+import { driver, pathId, randomKey } from './blobstore.js'
 
 export type Profile = {
   address: string
@@ -20,28 +19,28 @@ export type StoredObjectMeta = {
   encrypted: boolean
   createdAt: number
   shards: number
+  /** Locator for the encrypted bytes, resolved by the storage driver. */
+  blobRef: string
   /** Stellar/Soroban tx hash from register_object */
   registrationTx?: string
 }
 
-type DbShape = {
-  profiles: Record<string, Profile>
-  objects: Record<string, StoredObjectMeta>
-  payments: Record<string, { address: string; planId: string; at: number }>
-  challenges: Record<string, { address: string; expires: number }>
+const PREFIX = 'v1'
+
+function profileKey(address: string): string {
+  return `${PREFIX}/profiles/${pathId(address)}.json`
 }
 
-const dbPath = path.join(config.dataDir, 'ledger.json')
-
-function load(): DbShape {
-  if (!existsSync(dbPath)) {
-    return { profiles: {}, objects: {}, payments: {}, challenges: {} }
-  }
-  return JSON.parse(readFileSync(dbPath, 'utf8')) as DbShape
+function objectDir(owner: string): string {
+  return `${PREFIX}/objects/${pathId(owner)}`
 }
 
-function save(db: DbShape) {
-  writeFileSync(dbPath, JSON.stringify(db, null, 2))
+function objectKey(owner: string, hash: string): string {
+  return `${objectDir(owner)}/${pathId(hash)}.json`
+}
+
+function paymentKey(paymentHash: string): string {
+  return `${PREFIX}/payments/${pathId(paymentHash)}.json`
 }
 
 export function defaultProfile(address: string): Profile {
@@ -54,145 +53,102 @@ export function defaultProfile(address: string): Profile {
   }
 }
 
-export function getProfile(address: string): Profile {
-  const db = load()
-  return db.profiles[address] ?? defaultProfile(address)
+export async function getProfile(address: string): Promise<Profile> {
+  const stored = await driver.getJson<Profile>(profileKey(address))
+  return stored ?? defaultProfile(address)
 }
 
-export function setProfile(profile: Profile) {
-  const db = load()
-  db.profiles[profile.address] = profile
-  save(db)
+export async function setProfile(profile: Profile): Promise<void> {
+  await driver.putJson(profileKey(profile.address), profile)
 }
 
-export function listObjects(owner: string): StoredObjectMeta[] {
-  const db = load()
-  return Object.values(db.objects)
-    .filter((o) => o.owner === owner)
-    .sort((a, b) => b.createdAt - a.createdAt)
+export async function listObjects(owner: string): Promise<StoredObjectMeta[]> {
+  const objects = await driver.listJson<StoredObjectMeta>(objectDir(owner))
+  return objects.filter((o) => o.owner === owner).sort((a, b) => b.createdAt - a.createdAt)
 }
 
-export function getObject(hash: string): StoredObjectMeta | null {
-  const db = load()
-  return db.objects[hash] ?? null
+export async function getObject(owner: string, hash: string): Promise<StoredObjectMeta | null> {
+  return driver.getJson<StoredObjectMeta>(objectKey(owner, hash))
 }
 
-export function paymentSeen(hash: string): boolean {
-  const db = load()
-  return Boolean(db.payments[hash])
+export async function paymentSeen(hash: string): Promise<boolean> {
+  return Boolean(await driver.getJson(paymentKey(hash)))
 }
 
-export function markPayment(hash: string, address: string, planId: string) {
-  const db = load()
-  db.payments[hash] = { address, planId, at: Date.now() }
-  save(db)
-}
-
-export function createChallenge(address: string): { challengeId: string; message: string } {
-  const db = load()
-  const challengeId = randomBytes(16).toString('hex')
-  const expires = Date.now() + 5 * 60 * 1000
-  db.challenges[challengeId] = { address, expires }
-  save(db)
-  const message = `Evernet storage auth\nAddress: ${address}\nChallenge: ${challengeId}\nExpires: ${expires}`
-  return { challengeId, message }
-}
-
-export function consumeChallenge(challengeId: string, address: string): boolean {
-  const db = load()
-  const row = db.challenges[challengeId]
-  if (!row) return false
-  if (row.address !== address) return false
-  if (Date.now() > row.expires) {
-    delete db.challenges[challengeId]
-    save(db)
-    return false
-  }
-  delete db.challenges[challengeId]
-  save(db)
-  return true
+export async function markPayment(hash: string, address: string, planId: string): Promise<void> {
+  await driver.putJson(paymentKey(hash), { address, planId, at: Date.now() })
 }
 
 export function sha256Hex(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex')
 }
 
-export function blobPath(hash: string): string {
-  const dir = path.join(config.blobDir, hash.slice(0, 2))
-  mkdirSync(dir, { recursive: true })
-  return path.join(dir, hash)
+export async function writeBlob(owner: string, data: Buffer): Promise<string> {
+  const key = `${PREFIX}/data/${pathId(owner)}/${randomKey()}`
+  return driver.putBytes(key, data, 'application/octet-stream')
 }
 
-export function writeBlob(hash: string, data: Buffer) {
-  writeFileSync(blobPath(hash), data)
+export async function readBlob(meta: StoredObjectMeta): Promise<Buffer | null> {
+  return driver.getBytes(meta.blobRef)
 }
 
-export function readBlob(hash: string): Buffer | null {
-  const p = blobPath(hash)
-  if (!existsSync(p)) return null
-  return readFileSync(p)
-}
+export async function registerObjectLocal(meta: StoredObjectMeta): Promise<Profile> {
+  const existing = await getObject(meta.owner, meta.hash)
+  if (existing) throw new Error('Object already exists')
 
-export function deleteBlob(hash: string) {
-  const p = blobPath(hash)
-  if (existsSync(p)) unlinkSync(p)
-}
-
-export function registerObjectLocal(meta: StoredObjectMeta): Profile {
-  const db = load()
-  if (db.objects[meta.hash]) {
-    throw new Error('Object already exists')
-  }
-  const profile = db.profiles[meta.owner] ?? defaultProfile(meta.owner)
-  const remaining = profile.quotaBytes - profile.usedBytes
-  if (meta.size > remaining) {
+  const profile = await getProfile(meta.owner)
+  if (meta.size > profile.quotaBytes - profile.usedBytes) {
     throw new Error('Insufficient quota')
   }
   profile.usedBytes += meta.size
   profile.objectCount += 1
-  db.profiles[meta.owner] = profile
-  db.objects[meta.hash] = meta
-  save(db)
+
+  await driver.putJson(objectKey(meta.owner, meta.hash), meta)
+  await setProfile(profile)
   return profile
 }
 
-export function patchObjectMeta(hash: string, patch: Partial<StoredObjectMeta>): StoredObjectMeta | null {
-  const db = load()
-  const obj = db.objects[hash]
-  if (!obj) return null
-  const next = { ...obj, ...patch, hash: obj.hash, owner: obj.owner }
-  db.objects[hash] = next
-  save(db)
+export async function patchObjectMeta(
+  owner: string,
+  hash: string,
+  patch: Partial<StoredObjectMeta>,
+): Promise<StoredObjectMeta | null> {
+  const current = await getObject(owner, hash)
+  if (!current) return null
+  const next: StoredObjectMeta = { ...current, ...patch, hash: current.hash, owner: current.owner }
+  await driver.putJson(objectKey(owner, hash), next)
   return next
 }
 
-export function deleteObjectLocal(owner: string, hash: string): Profile {
-  const db = load()
-  const obj = db.objects[hash]
-  if (!obj) throw new Error('Object missing')
-  if (obj.owner !== owner) throw new Error('Unauthorized')
-  const profile = db.profiles[owner] ?? defaultProfile(owner)
-  profile.usedBytes = Math.max(0, profile.usedBytes - obj.size)
+export async function deleteObjectLocal(owner: string, hash: string): Promise<Profile> {
+  const meta = await getObject(owner, hash)
+  if (!meta) throw new Error('Object missing')
+
+  const profile = await getProfile(owner)
+  profile.usedBytes = Math.max(0, profile.usedBytes - meta.size)
   profile.objectCount = Math.max(0, profile.objectCount - 1)
-  db.profiles[owner] = profile
-  delete db.objects[hash]
-  save(db)
-  deleteBlob(hash)
+
+  await driver.delJson(objectKey(owner, hash))
+  await driver.delBytes(meta.blobRef)
+  await setProfile(profile)
   return profile
 }
 
-export function creditPurchaseLocal(address: string, planId: string, paymentHash: string): Profile {
-  if (paymentSeen(paymentHash)) throw new Error('Payment already credited')
+export async function creditPurchaseLocal(
+  address: string,
+  planId: string,
+  paymentHash: string,
+): Promise<Profile> {
+  if (await paymentSeen(paymentHash)) throw new Error('Payment already credited')
   const grant = config.planBytes[planId]
   if (!grant) throw new Error('Unknown plan')
-  const db = load()
-  const profile = db.profiles[address] ?? defaultProfile(address)
+
+  const profile = await getProfile(address)
   profile.quotaBytes += grant
   const now = Math.floor(Date.now() / 1000)
-  const add = 30 * 86_400
-  profile.leaseExpires = (profile.leaseExpires > now ? profile.leaseExpires : now) + add
-  db.profiles[address] = profile
-  db.payments[paymentHash] = { address, planId, at: Date.now() }
-  save(db)
+  profile.leaseExpires = (profile.leaseExpires > now ? profile.leaseExpires : now) + 30 * 86_400
+
+  await setProfile(profile)
+  await markPayment(paymentHash, address, planId)
   return profile
 }

@@ -1,17 +1,14 @@
 import { Link } from 'react-router-dom'
-import {
-  DEFAULT_RECEIVER,
-  FREIGHTER_DOWNLOAD_URL,
-  STORAGE_CONTRACT_ID,
-  STORAGE_PLANS,
-} from '../lib/stellar'
+import { DEFAULT_RECEIVER, STORAGE_CONTRACT_ID, STORAGE_PLANS } from '../lib/stellar'
+import { WALLET_CATALOGUE } from '../lib/wallet'
 import { formatBytes } from '../lib/format'
 import { apiBase } from '../lib/api'
 
 const toc = [
   { id: 'overview', label: 'What is Evernet?' },
   { id: 'quickstart', label: 'Quick start' },
-  { id: 'wallet', label: 'Freighter wallet' },
+  { id: 'wallet', label: 'Supported wallets' },
+  { id: 'mobile', label: 'Using Evernet on mobile' },
   { id: 'networks', label: 'Testnet vs Mainnet' },
   { id: 'vault', label: 'Using the vault' },
   { id: 'plans', label: 'Storage plans' },
@@ -32,9 +29,7 @@ export default function Docs() {
           <nav className="docs-top-nav" aria-label="Site">
             <Link to="/docs">Docs</Link>
             <Link to="/dashboard">Vault</Link>
-            <a href={FREIGHTER_DOWNLOAD_URL} target="_blank" rel="noreferrer">
-              Get Freighter
-            </a>
+            <a href="#wallet">Wallets</a>
             <Link className="docs-top-cta" to="/dashboard">
               Open vault
             </Link>
@@ -64,7 +59,7 @@ export default function Docs() {
           <section id="overview">
             <h2>What is Evernet?</h2>
             <p>
-              Evernet is a <strong>wallet-linked storage service</strong> built for the Stellar ecosystem. Your Freighter
+              Evernet is a <strong>wallet-linked storage service</strong> built for the Stellar ecosystem. Your Stellar
               address is your storage identity. Quota and object registrations live on a Soroban smart contract; file
               bytes are encrypted in your browser and stored on the Evernet storage network.
             </p>
@@ -78,20 +73,18 @@ export default function Docs() {
             <h2>Quick start</h2>
             <ol className="docs-steps">
               <li>
-                Install{' '}
-                <a href={FREIGHTER_DOWNLOAD_URL} target="_blank" rel="noreferrer">
-                  Freighter
-                </a>{' '}
-                (Chrome/Firefox extension or mobile).
+                Open the <Link to="/dashboard">vault</Link> and click <strong>Connect wallet</strong>.
               </li>
               <li>
-                Open the{' '}
-                <Link to="/dashboard">vault</Link> and click <strong>Connect Freighter</strong>. If Freighter is not
-                detected, you will be taken to the download page.
+                Pick your wallet from the list. Wallets you already have installed are shown as available; the rest link
+                to their download page.
               </li>
-              <li>Approve the connection and sign the Evernet auth challenge.</li>
               <li>
-                Switch Freighter to <strong>Testnet</strong> for free testing (use Friendbot for test XLM), or{' '}
+                Approve the connection, then sign the Evernet auth challenge. The challenge is a sequence-0 transaction
+                that can never be submitted to the network — signing it costs nothing and moves no funds.
+              </li>
+              <li>
+                Set your wallet to <strong>Testnet</strong> for free testing (Friendbot gives you test XLM), or{' '}
                 <strong>Public</strong> for Mainnet.
               </li>
               <li>Upload files (encrypted automatically) or buy more capacity with XLM.</li>
@@ -99,19 +92,63 @@ export default function Docs() {
           </section>
 
           <section id="wallet">
-            <h2>Freighter wallet</h2>
+            <h2>Supported wallets</h2>
             <p>
-              Evernet uses Freighter as the Stellar wallet. Without it, you cannot open a vault, sign in, or pay for
-              storage.
+              Evernet connects through the{' '}
+              <a href="https://stellarwalletskit.dev/" target="_blank" rel="noreferrer">
+                Stellar Wallets Kit
+              </a>
+              , so any wallet in the Stellar ecosystem works — not just Freighter.
+            </p>
+            <div className="docs-table-wrap">
+              <table className="docs-table">
+                <thead>
+                  <tr>
+                    <th>Wallet</th>
+                    <th>Platforms</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {WALLET_CATALOGUE.map((wallet) => (
+                    <tr key={wallet.name}>
+                      <td>
+                        <a href={wallet.url} target="_blank" rel="noreferrer">
+                          {wallet.name}
+                        </a>
+                      </td>
+                      <td>{wallet.platforms}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p>
+              Hardware wallets (Ledger, Trezor) and WalletConnect can be enabled per-deployment. Disconnect anytime from
+              the vault header; your on-chain profile stays tied to that address.
+            </p>
+          </section>
+
+          <section id="mobile">
+            <h2>Using Evernet on mobile</h2>
+            <p>
+              Browser extensions do not exist on mobile, so a phone browser cannot see Freighter’s extension the way a
+              desktop browser can. There are two ways around this:
             </p>
             <ul>
               <li>
-                Download: <a href={FREIGHTER_DOWNLOAD_URL} target="_blank" rel="noreferrer">{FREIGHTER_DOWNLOAD_URL}</a>
+                <strong>Use your wallet’s in-app browser.</strong> Open Freighter, LOBSTR or xBull on your phone, find
+                the built-in browser (often “Discover” or “dApps”), and load <code>evernet.tech</code> there. Evernet
+                detects that it is running inside the wallet and connects without extra steps.
               </li>
-              <li>After installing, refresh Evernet and click Connect Freighter again.</li>
-              <li>You will sign a short message to prove you control the address — that starts your vault session.</li>
-              <li>Disconnect anytime from the vault header; your on-chain profile remains tied to that address.</li>
+              <li>
+                <strong>Use a wallet that works over a link.</strong> LOBSTR, xBull’s web PWA, and Albedo authorise
+                through a redirect or deep link, so they work from any mobile browser.
+              </li>
             </ul>
+            <p>
+              Whichever route you take, the vault is keyed to the Stellar address — the same wallet on desktop and mobile
+              opens the same files.
+            </p>
           </section>
 
           <section id="networks">
@@ -120,21 +157,21 @@ export default function Docs() {
               <div>
                 <h3>Testnet (default)</h3>
                 <p>
-                  Free test XLM via Friendbot / Freighter. Safe for trying uploads and purchases. Evernet’s treasury and
-                  Soroban contract are deployed on Testnet today.
+                  Free test XLM via Friendbot. Safe for trying uploads and purchases. Evernet’s treasury and Soroban
+                  contract are deployed on Testnet today.
                 </p>
               </div>
               <div>
                 <h3>Mainnet</h3>
                 <p>
-                  Uses real XLM. Switch Freighter to Public Network and use the Mainnet toggle when buying storage. The
-                  treasury account must be funded on Mainnet before payments succeed.
+                  Uses real XLM. Switch your wallet to Public Network and use the Mainnet toggle when buying storage.
+                  The treasury account must be funded on Mainnet before payments succeed.
                 </p>
               </div>
             </div>
             <p>
-              Always match Freighter’s network to the network selected in the Buy Storage modal, or the transaction will
-              be rejected.
+              Always match your wallet’s network to the network selected in the Buy Storage modal, or the transaction
+              will be rejected.
             </p>
           </section>
 
@@ -147,7 +184,7 @@ export default function Docs() {
               </li>
               <li>
                 <strong>Download</strong> — ciphertext is fetched and decrypted in your browser with a key derived from
-                your wallet address (v1 helper). Use the same Freighter address to recover files on another device.
+                your wallet address (v1 helper). Use the same Stellar address to recover files on another device.
               </li>
               <li>
                 <strong>Delete</strong> — removes the blob and frees quota on your profile.
@@ -198,13 +235,14 @@ export default function Docs() {
             <h2>How it works</h2>
             <ol className="docs-steps">
               <li>
-                <strong>Identity</strong> — Freighter address <code>G…</code>
+                <strong>Identity</strong> — your Stellar address <code>G…</code>
               </li>
               <li>
-                <strong>Auth</strong> — you sign a one-time challenge; the API issues a session token for that address
+                <strong>Auth</strong> — you sign a one-time SEP-10 style challenge transaction; the API verifies the
+                signature and issues a session token for that address
               </li>
               <li>
-                <strong>Pay</strong> — Freighter submits an XLM payment to the treasury on Stellar
+                <strong>Pay</strong> — your wallet signs an XLM payment to the treasury on Stellar
               </li>
               <li>
                 <strong>Credit</strong> — API verifies the payment on Horizon, then calls Soroban{' '}
@@ -225,8 +263,12 @@ export default function Docs() {
                 v1 uses a wallet-derived passphrase helper for convenience. For higher security, treat this as a demo
                 model and prefer a strong personal passphrase in future versions.
               </li>
-              <li>Never share your Freighter secret phrase. Evernet never asks for it.</li>
-              <li>Only connect Freighter on the official Evernet site you trust.</li>
+              <li>
+                The login challenge is a sequence-0 transaction with a random nonce and a five-minute expiry. It is not
+                submittable, so signing it can never move funds.
+              </li>
+              <li>Never share your wallet’s secret key or recovery phrase. Evernet never asks for it.</li>
+              <li>Only connect a wallet on the official Evernet site you trust.</li>
             </ul>
           </section>
 
@@ -234,20 +276,28 @@ export default function Docs() {
             <h2>FAQ</h2>
             <dl className="docs-faq">
               <div>
-                <dt>I clicked Connect Freighter and a new tab opened</dt>
+                <dt>Freighter doesn’t show up on my phone</dt>
                 <dd>
-                  Freighter was not detected. Install it from the download page, then return and connect again.
+                  Mobile browsers can’t load browser extensions, so an extension-only wallet is invisible there. Open
+                  evernet.tech inside your wallet’s in-app browser, or connect with LOBSTR, xBull or Albedo instead.
+                </dd>
+              </div>
+              <div>
+                <dt>My wallet isn’t listed as available</dt>
+                <dd>
+                  The connect dialog checks which wallets are actually installed. If yours shows an install link, add
+                  the extension or app, reload Evernet, and connect again.
                 </dd>
               </div>
               <div>
                 <dt>Can I see my files without connecting?</dt>
-                <dd>No. The vault is empty until a Freighter wallet is connected and authenticated.</dd>
+                <dd>No. The vault is empty until a Stellar wallet is connected and authenticated.</dd>
               </div>
               <div>
                 <dt>Will the same wallet work on another computer?</dt>
                 <dd>
-                  Yes — connect the same Freighter address. Quota is on-chain; objects are served by the Evernet API for
-                  that wallet.
+                  Yes — connect the same Stellar address, from any supported wallet. Quota is on-chain; objects are
+                  served by the Evernet API for that address.
                 </dd>
               </div>
               <div>
@@ -259,7 +309,7 @@ export default function Docs() {
               <div>
                 <dt>Is this Mainnet production storage?</dt>
                 <dd>
-                  Testnet is the primary demo network today. Mainnet payments are supported when Freighter and the
+                  Testnet is the primary demo network today. Mainnet payments are supported when your wallet and the
                   treasury are configured for Public Network. Full decentralized node mesh remains on the roadmap.
                 </dd>
               </div>
@@ -273,7 +323,10 @@ export default function Docs() {
                 Vault: <Link to="/dashboard">/dashboard</Link>
               </li>
               <li>
-                Freighter: <a href={FREIGHTER_DOWNLOAD_URL}>{FREIGHTER_DOWNLOAD_URL}</a>
+                Wallet support:{' '}
+                <a href="https://stellarwalletskit.dev/" target="_blank" rel="noreferrer">
+                  stellarwalletskit.dev
+                </a>
               </li>
               <li>
                 Storage API: <a href={apiBase()}>{apiBase()}</a>

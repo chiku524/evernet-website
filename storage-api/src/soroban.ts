@@ -102,13 +102,24 @@ export async function fetchOnChainProfile(address: string): Promise<Profile | nu
   }
 }
 
+/**
+ * Soroban tracks quota and lease, but only the off-chain mirror knows how many
+ * bytes are actually stored, so usage always comes from the mirror.
+ */
 export async function getMergedProfile(address: string): Promise<Profile & { source: string }> {
+  const mirror = await getProfile(address)
   const onchain = await fetchOnChainProfile(address)
-  if (onchain) {
-    setProfile(onchain)
-    return { ...onchain, source: 'soroban' }
+  if (!onchain) return { ...mirror, source: 'mirror' }
+
+  const merged: Profile = {
+    address,
+    quotaBytes: Math.max(onchain.quotaBytes, mirror.quotaBytes),
+    usedBytes: mirror.usedBytes,
+    leaseExpires: Math.max(onchain.leaseExpires, mirror.leaseExpires),
+    objectCount: mirror.objectCount,
   }
-  return { ...getProfile(address), source: 'mirror' }
+  await setProfile(merged)
+  return { ...merged, source: 'soroban' }
 }
 
 export async function creditPurchaseOnChain(input: {
@@ -116,7 +127,7 @@ export async function creditPurchaseOnChain(input: {
   planId: string
   paymentHashHex: string
 }): Promise<Profile> {
-  const local = creditPurchaseLocal(input.address, input.planId, input.paymentHashHex)
+  const local = await creditPurchaseLocal(input.address, input.planId, input.paymentHashHex)
 
   if (!hasOnChain()) return local
 
@@ -134,9 +145,14 @@ export async function creditPurchaseOnChain(input: {
       ],
     })
     if (ret?.returnValue) {
-      const profile = profileFromNative(scValToNative(ret.returnValue), input.address)
-      setProfile(profile)
-      return profile
+      const onchain = profileFromNative(scValToNative(ret.returnValue), input.address)
+      const merged: Profile = {
+        ...local,
+        quotaBytes: Math.max(onchain.quotaBytes, local.quotaBytes),
+        leaseExpires: Math.max(onchain.leaseExpires, local.leaseExpires),
+      }
+      await setProfile(merged)
+      return merged
     }
   } catch (err) {
     console.warn('On-chain credit failed; local mirror credited', err)

@@ -1,21 +1,18 @@
 import { useEffect, useState } from 'react'
-import { confirmPurchase, loginWithFreighter, sessionAddress } from '../../lib/api'
+import { confirmPurchase, hasSession, loginWithWallet, sessionAddress } from '../../lib/api'
 import { formatBytes } from '../../lib/format'
 import {
   DEFAULT_RECEIVER,
-  FREIGHTER_DOWNLOAD_URL,
   STORAGE_CONTRACT_ID,
   STORAGE_PLANS,
   type StellarNetworkId,
   type StoragePlan,
-  connectFreighter,
-  getFreighterAddress,
-  isFreighterInstalled,
   loadPreferredNetwork,
   purchaseStoragePlan,
   savePreferredNetwork,
   shortenAddress,
 } from '../../lib/stellar'
+import { connectWallet, restoreWallet } from '../../lib/wallet'
 
 type Props = {
   open: boolean
@@ -28,7 +25,6 @@ type Props = {
 export function BuyStorageModal({ open, onClose, onPurchased, showToast, wallet }: Props) {
   const [network, setNetwork] = useState<StellarNetworkId>(() => loadPreferredNetwork())
   const [address, setAddress] = useState<string | null>(wallet)
-  const [hasFreighter, setHasFreighter] = useState<boolean | null>(null)
   const [selected, setSelected] = useState<StoragePlan>(STORAGE_PLANS[1])
   const [paying, setPaying] = useState(false)
   const [connecting, setConnecting] = useState(false)
@@ -38,32 +34,31 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast, wallet 
   useEffect(() => {
     if (!open) return
     setError(null)
-    setNetwork(loadPreferredNetwork())
+    const preferred = loadPreferredNetwork()
+    setNetwork(preferred)
     setAddress(wallet || sessionAddress())
     void (async () => {
-      setHasFreighter(await isFreighterInstalled())
-      if (!wallet) setAddress(await getFreighterAddress())
+      if (!wallet) setAddress(await restoreWallet(preferred))
     })()
   }, [open, wallet])
 
   if (!open) return null
 
-  async function ensureAuthed(addr: string) {
-    if (sessionAddress() === addr) return
-    await loginWithFreighter(addr)
+  async function ensureAuthed(addr: string, net: StellarNetworkId) {
+    if (hasSession(addr)) return
+    await loginWithWallet(addr, net)
   }
 
   async function handleConnect() {
     setConnecting(true)
     setError(null)
     try {
-      const addr = await connectFreighter()
-      await ensureAuthed(addr)
+      const addr = await connectWallet(network)
+      await ensureAuthed(addr, network)
       setAddress(addr)
-      setHasFreighter(true)
-      showToast('Freighter connected · vault session started')
+      showToast('Wallet connected · vault session started')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not connect Freighter')
+      setError(err instanceof Error ? err.message : 'Could not connect a wallet')
     } finally {
       setConnecting(false)
     }
@@ -75,11 +70,11 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast, wallet 
     setLastTx(null)
     try {
       savePreferredNetwork(network)
-      const addr = address || (await connectFreighter())
-      await ensureAuthed(addr)
+      const addr = address || (await connectWallet(network))
+      await ensureAuthed(addr, network)
       setAddress(addr)
 
-      const payment = await purchaseStoragePlan(selected, network)
+      const payment = await purchaseStoragePlan(selected, network, addr)
       const credited = await confirmPurchase(selected.id, payment.hash)
       setLastTx(credited.explorerUrl)
       onPurchased()
@@ -136,26 +131,13 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast, wallet 
                 <>
                   Connected <code>{shortenAddress(address)}</code>
                 </>
-              ) : hasFreighter === false ? (
-                <>
-                  Freighter not detected ·{' '}
-                  <a href={FREIGHTER_DOWNLOAD_URL} target="_blank" rel="noreferrer">
-                    Install Freighter
-                  </a>
-                </>
               ) : (
-                'Connect Freighter to bind storage to your address'
+                'Connect any Stellar wallet to bind storage to your address'
               )}
             </p>
           </div>
           <button type="button" className="dash-btn ghost" onClick={() => void handleConnect()} disabled={connecting}>
-            {address
-              ? 'Reconnect'
-              : connecting
-                ? 'Connecting…'
-                : hasFreighter === false
-                  ? 'Install Freighter'
-                  : 'Connect Freighter'}
+            {address ? 'Switch wallet' : connecting ? 'Connecting…' : 'Connect wallet'}
           </button>
         </div>
 
@@ -210,7 +192,7 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast, wallet 
         <p className="pay-footnote">
           {network === 'testnet'
             ? 'Testnet: Friendbot treasury + free test XLM. Quota is written to the Evernet Soroban contract and mirrored by the storage API.'
-            : 'Mainnet spends real XLM. Fund the treasury and set Freighter to Public Network first.'}
+            : 'Mainnet spends real XLM. Fund the treasury and set your wallet to Public Network first.'}
         </p>
       </div>
     </div>

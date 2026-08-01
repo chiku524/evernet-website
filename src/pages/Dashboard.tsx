@@ -10,8 +10,9 @@ import {
   downloadObject,
   fetchPublicConfig,
   getProfile,
+  hasSession,
   listObjects,
-  loginWithFreighter,
+  loginWithWallet,
   sessionAddress,
   uploadObject,
 } from '../lib/api'
@@ -19,16 +20,19 @@ import { decryptBlob, encryptFile, walletPassphrase } from '../lib/crypto'
 import { fileIconKind, formatBytes } from '../lib/format'
 import {
   STORAGE_CONTRACT_ID,
-  connectFreighter,
-  disconnectFreighterLocal,
   explorerContractUrl,
   explorerTxUrl,
-  getFreighterAddress,
-  isFreighterInstalled,
   loadPreferredNetwork,
+  saveAddress,
   shortenAddress,
   type StellarNetworkId,
 } from '../lib/stellar'
+import {
+  connectWallet,
+  disconnectWallet,
+  openWalletProfile,
+  restoreWallet,
+} from '../lib/wallet'
 
 function Icon({ kind }: { kind: ReturnType<typeof fileIconKind> | 'folder' }) {
   const common = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true as const }
@@ -69,7 +73,6 @@ export default function Dashboard() {
   const [onChain, setOnChain] = useState(false)
   const [contractId, setContractId] = useState(STORAGE_CONTRACT_ID)
   const [apiOnline, setApiOnline] = useState<boolean | null>(null)
-  const [hasFreighter, setHasFreighter] = useState<boolean | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
 
@@ -88,22 +91,24 @@ export default function Dashboard() {
 
   useEffect(() => {
     void (async () => {
-      setHasFreighter(await isFreighterInstalled())
+      let activeNetwork = network
       try {
         const cfg = await fetchPublicConfig()
         setApiOnline(true)
         setOnChain(cfg.onChain)
         if (cfg.contractId) setContractId(cfg.contractId)
         if (cfg.network === 'public' || cfg.network === 'testnet') {
+          activeNetwork = cfg.network
           setNetwork(cfg.network)
         }
       } catch {
         setApiOnline(false)
       }
 
-      const addr = await getFreighterAddress()
+      const addr = await restoreWallet(activeNetwork)
       setWallet(addr)
-      if (addr && sessionAddress() === addr) {
+      saveAddress(addr)
+      if (addr && hasSession(addr)) {
         try {
           await refresh()
         } catch {
@@ -112,6 +117,8 @@ export default function Dashboard() {
         }
       }
     })()
+    // Runs once on mount; the API response decides the live network.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh])
 
   useEffect(() => {
@@ -167,9 +174,10 @@ export default function Dashboard() {
   async function connectAndAuth() {
     setBusy(true)
     try {
-      const addr = await connectFreighter()
+      const addr = await connectWallet(network)
       setWallet(addr)
-      await loginWithFreighter(addr)
+      saveAddress(addr)
+      await loginWithWallet(addr, network)
       await refresh()
       setToast('Wallet profile linked on Evernet')
     } catch (err) {
@@ -181,7 +189,8 @@ export default function Dashboard() {
 
   async function disconnect() {
     clearSession()
-    await disconnectFreighterLocal()
+    await disconnectWallet()
+    saveAddress(null)
     setWallet(null)
     setAuthed(false)
     setProfile(null)
@@ -192,7 +201,7 @@ export default function Dashboard() {
 
   async function handleUpload(fileList: FileList | File[]) {
     if (!authed || !wallet) {
-      setToast('Connect Freighter to upload')
+      setToast('Connect a Stellar wallet to upload')
       return
     }
     setBusy(true)
@@ -347,7 +356,7 @@ export default function Dashboard() {
             )}
             {!authed ? (
               <button type="button" className="dash-btn primary" disabled={busy} onClick={() => void connectAndAuth()}>
-                {busy ? 'Connecting…' : hasFreighter === false ? 'Install Freighter' : 'Connect Freighter'}
+                {busy ? 'Connecting…' : 'Connect wallet'}
               </button>
             ) : (
               <>
@@ -361,6 +370,9 @@ export default function Dashboard() {
                   onClick={() => fileInputRef.current?.click()}
                 >
                   Upload
+                </button>
+                <button type="button" className="dash-btn ghost" onClick={() => void openWalletProfile()}>
+                  Wallet
                 </button>
                 <button type="button" className="dash-btn ghost" onClick={() => void disconnect()}>
                   Disconnect
@@ -408,15 +420,20 @@ export default function Dashboard() {
               <div className="dash-empty">
                 <h2>Your storage is tied to your Stellar wallet</h2>
                 <p>
-                  Connect Freighter to load the Soroban storage profile for that address. Files are encrypted in-browser,
-                  stored on the Evernet API, and registered on-chain.
+                  Connect Freighter, LOBSTR, xBull, Albedo, Hana, Rabet or any other supported Stellar wallet to load the
+                  Soroban storage profile for that address. Files are encrypted in-browser, stored on the Evernet API,
+                  and registered on-chain.
                 </p>
                 <button type="button" className="dash-btn primary" disabled={busy} onClick={() => void connectAndAuth()}>
-                  {busy ? 'Connecting…' : hasFreighter === false ? 'Install Freighter' : 'Connect Freighter'}
+                  {busy ? 'Connecting…' : 'Connect wallet'}
                 </button>
+                <p className="dash-empty-hint">
+                  On a phone? Open evernet.tech inside your wallet’s in-app browser, or pick LOBSTR / xBull in the
+                  connect dialog.
+                </p>
                 {apiOnline === false && (
-                  <p style={{ color: '#a33d2d', marginTop: '1rem' }}>
-                    Storage API unreachable at {apiBase()}. Start it with <code>npm run api</code>.
+                  <p className="dash-empty-error">
+                    Storage API unreachable at {apiBase()}. It may be redeploying — retry in a moment.
                   </p>
                 )}
               </div>
@@ -540,7 +557,7 @@ export default function Dashboard() {
                 <h2>Wallet-linked storage</h2>
                 <p className="dash-detail-copy">
                   Quota and object registrations live on the Soroban <code>storage-market</code> contract. Encrypted
-                  bytes live on the Evernet storage API, authorized by Freighter challenge signatures.
+                  bytes live on the Evernet storage API, authorized by a SEP-10 style challenge your wallet signs.
                 </p>
                 <ul className="dash-detail-list">
                   <li>Identity = Stellar address</li>

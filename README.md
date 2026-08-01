@@ -8,9 +8,9 @@ Live: [evernet.tech](https://evernet.tech) · API: [evernet-storage-api.vercel.a
 
 | Layer | Role |
 |-------|------|
-| **Freighter wallet** | User identity (`G…` address) |
+| **Any Stellar wallet** | User identity (`G…` address), via [Stellar Wallets Kit](https://stellarwalletskit.dev/) |
 | **Soroban `storage-market`** | On-chain profile: quota, used bytes, lease, object registrations, payment dedupe |
-| **Storage API** | Challenge auth, encrypted blob store, Horizon payment verify → `credit_purchase` |
+| **Storage API** | SEP-10 style auth, encrypted blob store, Horizon payment verify → `credit_purchase` |
 | **Dashboard** | Connect wallet, buy XLM plans, encrypt/upload/download |
 
 Stellar does **not** store file bytes. It stores the control plane (who paid, how much quota, which content hashes). Ciphertext lives on the Evernet storage API, keyed by wallet.
@@ -33,7 +33,13 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173/dashboard`, connect Freighter (Testnet), sign the auth challenge, then upload or buy storage.
+Open `http://localhost:5173/dashboard`, connect a wallet (Testnet), sign the auth challenge, then upload or buy storage.
+
+Smoke-test the API end to end (challenge → upload → download → delete) with a throwaway keypair:
+
+```bash
+cd storage-api && npx tsx src/scripts/smoke-auth.ts https://evernet-storage-api.vercel.app
+```
 
 ### Contract build / redeploy
 
@@ -57,7 +63,15 @@ stellar contract invoke --id $CONTRACT_ID --source-account $STELLAR_ADMIN_SECRET
 | Growth | +50 GB | 20 XLM |
 | Pro | +200 GB | 60 XLM |
 
-Flow: Freighter pays treasury → API verifies on Horizon → admin invokes `credit_purchase` on Soroban → dashboard quota updates for that wallet on any browser.
+Flow: wallet pays treasury → API verifies on Horizon → admin invokes `credit_purchase` on Soroban → dashboard quota updates for that wallet on any browser.
+
+## Wallets
+
+The connect dialog is driven by the Stellar Wallets Kit, so Freighter, LOBSTR, xBull, Albedo, Rabet, Hana, Klever, OneKey, Bitget, Fordefi, Cactus Link and D'CENT all work out of the box.
+
+Mobile browsers cannot load extensions, so an extension-only wallet is invisible on a phone. Users should either open evernet.tech inside their wallet's in-app browser, or pick a wallet that authorises over a link (LOBSTR, xBull PWA, Albedo). Setting `VITE_WALLETCONNECT_PROJECT_ID` additionally enables WalletConnect QR pairing; leaving it empty keeps that dependency out of the bundle.
+
+Auth is a SEP-10 style challenge rather than `signMessage`, because only a subset of wallets implement arbitrary message signing. The API returns a sequence-0 transaction with a random nonce and 5-minute timebounds, signed by a server key derived from `API_JWT_SECRET`; the wallet counter-signs and the API verifies both signatures. The transaction can never be submitted, so signing it moves no funds.
 
 ## Repo layout
 
@@ -72,12 +86,18 @@ src/                        Vite React site + dashboard
 **Web (`VITE_*`):** see `.env.example`  
 **API:** see `storage-api/.env.example` (`STELLAR_ADMIN_SECRET`, `STORAGE_CONTRACT_ID`, …)
 
-## Persistence note
+## Persistence
 
-The Vercel-hosted API uses ephemeral disk for blobs (fine for demos). For durable node storage, run `storage-api` with a volume (`Dockerfile` + `fly.toml` included) and point `VITE_STORAGE_API_URL` at it. On-chain quota/hashes remain on Soroban either way.
+Serverless instances get a fresh `/tmp` on every request, so the API selects a storage driver at boot:
+
+- `BLOB_READ_WRITE_TOKEN` set → **Vercel Blob** (production default)
+- otherwise → **local disk** under `storage-api/data` (development)
+
+`GET /health` reports which driver is active. Object metadata and blob pathnames are salted with an HMAC of `API_JWT_SECRET` so they can't be enumerated from the public blob host. Alternatively run `storage-api` on a box with a real volume (`Dockerfile` + `fly.toml` included) and point `VITE_STORAGE_API_URL` at it. On-chain quota/hashes remain on Soroban either way.
 
 ## Security (v1)
 
 - Client-side AES-GCM before upload (key derived from wallet address passphrase helper — replace with user passphrase for production)
-- API auth via Freighter `signMessage` challenge
+- API auth via a SEP-10 style challenge transaction, verified against both the server key and the user's address
 - Payment hashes cannot be credited twice (`Payment` entries on-chain + API mirror)
+- CORS allows evernet.tech, Vercel previews and localhost; anything else is rejected

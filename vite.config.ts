@@ -7,7 +7,7 @@ export default defineConfig({
     global: 'globalThis',
   },
   optimizeDeps: {
-    include: ['buffer', '@stellar/stellar-sdk', '@stellar/freighter-api'],
+    include: ['buffer', '@stellar/stellar-sdk'],
   },
   build: {
     commonjsOptions: {

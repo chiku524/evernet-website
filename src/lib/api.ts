@@ -1,4 +1,5 @@
-import freighterApi from '@stellar/freighter-api'
+import type { StellarNetworkId } from './stellar'
+import { signTransactionXdr } from './wallet'
 
 const TOKEN_KEY = 'evernet-api-token'
 const ADDR_KEY = 'evernet-api-address'
@@ -42,13 +43,29 @@ export function sessionAddress(): string | null {
   return localStorage.getItem(ADDR_KEY)
 }
 
+export class ApiUnreachableError extends Error {
+  constructor(base: string) {
+    super(`Could not reach the Evernet storage API at ${base}. Check your connection and retry.`)
+    this.name = 'ApiUnreachableError'
+  }
+}
+
+async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  try {
+    return await fetch(`${apiBase()}${path}`, init)
+  } catch {
+    throw new ApiUnreachableError(apiBase())
+  }
+}
+
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  const res = await fetch(`${apiBase()}${path}`, { ...init, headers })
+  const res = await apiFetch(path, { ...init, headers })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
+    if (res.status === 401) clearSession()
     throw new Error((data as { error?: string }).error || `API ${res.status}`)
   }
   return data as T
@@ -65,33 +82,35 @@ export async function fetchPublicConfig() {
   }>('/config/public')
 }
 
-export async function loginWithFreighter(address: string): Promise<string> {
-  const challenge = await api<{ challengeId: string; message: string }>('/auth/challenge', {
+/**
+ * SEP-10 style login: the API hands back an unsubmittable sequence-0
+ * transaction and the wallet signs it. Every Stellar wallet can sign a
+ * transaction, whereas arbitrary message signing is only implemented by some.
+ */
+export async function loginWithWallet(
+  address: string,
+  network: StellarNetworkId,
+): Promise<string> {
+  const challenge = await api<{ transaction: string; network: string }>('/auth/challenge', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ address }),
   })
 
-  const signed = await freighterApi.signMessage(challenge.message, { address })
-  if (signed.error) throw new Error(signed.error)
-  const signature =
-    (signed as { signedMessage?: string; signature?: string }).signedMessage ||
-    (signed as { signature?: string }).signature
-  if (!signature) throw new Error('Freighter did not return a signature')
+  const signedTransaction = await signTransactionXdr(challenge.transaction, address, network)
 
   const result = await api<{ token: string; address: string }>('/auth/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      address,
-      challengeId: challenge.challengeId,
-      message: challenge.message,
-      signature,
-    }),
+    body: JSON.stringify({ address, signedTransaction }),
   })
   localStorage.setItem(TOKEN_KEY, result.token)
   localStorage.setItem(ADDR_KEY, result.address)
   return result.address
+}
+
+export function hasSession(address: string): boolean {
+  return Boolean(localStorage.getItem(TOKEN_KEY)) && sessionAddress() === address
 }
 
 export async function getProfile(): Promise<ApiProfile> {
@@ -110,19 +129,19 @@ export async function uploadObject(file: Blob, meta: { name: string; mimeType: s
   form.append('mimeType', meta.mimeType)
   form.append('encrypted', String(meta.encrypted))
   const token = getToken()
-  const res = await fetch(`${apiBase()}/objects`, {
+  const res = await apiFetch('/objects', {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
   })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || 'Upload failed')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Upload failed')
   return data as { object: ApiObject; profile: ApiProfile }
 }
 
 export async function downloadObject(hash: string): Promise<Blob> {
   const token = getToken()
-  const res = await fetch(`${apiBase()}/objects/${hash}`, {
+  const res = await apiFetch(`/objects/${hash}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
   if (!res.ok) {
