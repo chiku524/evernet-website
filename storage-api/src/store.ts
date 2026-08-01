@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import { config } from './config.js'
 import { driver, pathId, randomKey } from './blobstore.js'
+
+const VAULT_REV_KEEP = 12
 import {
   childSegment,
   isUnderFolder,
@@ -47,7 +49,13 @@ function profileKey(address: string): string {
   return `${PREFIX}/profiles/${pathId(address)}.json`
 }
 
-function vaultKey(owner: string): string {
+/** Immutable revision directory — never overwrite the same Blob URL for vault state. */
+function vaultDir(owner: string): string {
+  return `${PREFIX}/vaults/${pathId(owner)}`
+}
+
+/** Older single-file vault key (overwrites were unreliable on the Blob CDN). */
+function legacyVaultKey(owner: string): string {
   return `${PREFIX}/vaults/${pathId(owner)}.json`
 }
 
@@ -72,17 +80,51 @@ function emptyVault(owner: string): VaultLedger {
   return { owner, folders: [], objects: {}, updatedAt: 0 }
 }
 
+function normalizeVault(owner: string, existing: VaultLedger): VaultLedger {
+  return {
+    owner,
+    folders: [...new Set((existing.folders || []).map((f) => normalizeFolderPath(f)).filter(Boolean))],
+    objects: Object.fromEntries(
+      Object.entries(existing.objects || {}).map(([hash, meta]) => [hash, withFolder(meta)]),
+    ),
+    updatedAt: existing.updatedAt || 0,
+  }
+}
+
+async function latestVaultRevision(owner: string): Promise<VaultLedger | null> {
+  const keys = (await driver.listKeys(vaultDir(owner)))
+    .filter((key) => /\/rev-\d{15}-[a-f0-9]+\.json$/i.test(key))
+    .sort()
+    .reverse()
+
+  for (const key of keys.slice(0, 3)) {
+    const parsed = await driver.getJson<VaultLedger>(key)
+    if (parsed?.objects) return normalizeVault(owner, parsed)
+  }
+  return null
+}
+
+async function pruneVaultRevisions(owner: string): Promise<void> {
+  try {
+    const keys = (await driver.listKeys(vaultDir(owner)))
+      .filter((key) => /\/rev-\d{15}-[a-f0-9]+\.json$/i.test(key))
+      .sort()
+      .reverse()
+    await Promise.all(keys.slice(VAULT_REV_KEEP).map((key) => driver.delJson(key)))
+  } catch {
+    /* best-effort */
+  }
+}
+
 async function loadVault(owner: string): Promise<VaultLedger> {
-  const existing = await driver.getJson<VaultLedger>(vaultKey(owner))
-  if (existing?.objects) {
-    return {
-      owner,
-      folders: [...new Set((existing.folders || []).map((f) => normalizeFolderPath(f)).filter(Boolean))],
-      objects: Object.fromEntries(
-        Object.entries(existing.objects).map(([hash, meta]) => [hash, withFolder(meta)]),
-      ),
-      updatedAt: existing.updatedAt || 0,
-    }
+  const fromRevisions = await latestVaultRevision(owner)
+  if (fromRevisions) return fromRevisions
+
+  const legacySingle = await driver.getJson<VaultLedger>(legacyVaultKey(owner))
+  if (legacySingle?.objects) {
+    const vault = normalizeVault(owner, legacySingle)
+    await saveVault(vault)
+    return vault
   }
 
   // One-time migrate from the old per-object + folder-book layout.
@@ -116,7 +158,10 @@ async function loadVault(owner: string): Promise<VaultLedger> {
 async function saveVault(vault: VaultLedger): Promise<void> {
   vault.updatedAt = Date.now()
   vault.folders = [...new Set(vault.folders.map((f) => normalizeFolderPath(f)).filter(Boolean))].sort()
-  await driver.putJson(vaultKey(vault.owner), vault)
+  const rev = `${vault.updatedAt.toString().padStart(15, '0')}-${randomKey().slice(0, 8)}`
+  const key = `${vaultDir(vault.owner)}/rev-${rev}.json`
+  await driver.putJson(key, vault)
+  void pruneVaultRevisions(vault.owner)
 }
 
 function rememberFolder(vault: VaultLedger, path: string) {

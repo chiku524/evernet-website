@@ -23,6 +23,7 @@ export interface Driver {
   putJson(key: string, value: unknown): Promise<void>
   getJson<T>(key: string): Promise<T | null>
   delJson(key: string): Promise<void>
+  listKeys(prefix: string): Promise<string[]>
   listJson<T>(prefix: string): Promise<T[]>
 }
 
@@ -60,7 +61,7 @@ class LocalDriver implements Driver {
   }
 
   async putJson(key: string, value: unknown): Promise<void> {
-    writeFileSync(this.file(key), JSON.stringify(value, null, 2))
+    writeFileSync(this.file(key), JSON.stringify(value))
   }
 
   async getJson<T>(key: string): Promise<T | null> {
@@ -77,12 +78,19 @@ class LocalDriver implements Driver {
     await this.delBytes(key)
   }
 
-  async listJson<T>(prefix: string): Promise<T[]> {
+  async listKeys(prefix: string): Promise<string[]> {
     const dir = path.join(config.dataDir, prefix)
     if (!existsSync(dir)) return []
+    return readdirSync(dir)
+      .filter((entry) => entry.endsWith('.json'))
+      .map((entry) => path.posix.join(prefix.replace(/\\/g, '/').replace(/\/$/, ''), entry))
+  }
+
+  async listJson<T>(prefix: string): Promise<T[]> {
+    const keys = await this.listKeys(prefix)
     const out: T[] = []
-    for (const entry of readdirSync(dir)) {
-      const parsed = await this.getJson<T>(path.posix.join(prefix, entry))
+    for (const key of keys) {
+      const parsed = await this.getJson<T>(key)
       if (parsed) out.push(parsed)
     }
     return out
@@ -97,14 +105,7 @@ class VercelBlobDriver implements Driver {
   }
 
   async putBytes(key: string, data: Buffer, contentType: string): Promise<string> {
-    const { put, del } = await this.sdk()
-    // Delete-first overwrite: allowOverwrite alone has been observed to leave
-    // stale public URL bodies when listing immediately after a metadata patch.
-    try {
-      await del(key, { token: config.blobToken })
-    } catch {
-      /* first write */
-    }
+    const { put } = await this.sdk()
     const res = await put(key, data, {
       access: 'public',
       contentType,
@@ -116,33 +117,40 @@ class VercelBlobDriver implements Driver {
     return res.url
   }
 
-  private async fetchBytes(url: string): Promise<Buffer | null> {
+  private async fetchUrl(url: string): Promise<Buffer | null> {
     const bust = url.includes('?') ? `&_=${Date.now()}` : `?_=${Date.now()}`
-    const res = await fetch(`${url}${bust}`, { cache: 'no-store' })
-    if (!res.ok) return null
-    return Buffer.from(await res.arrayBuffer())
+    try {
+      const res = await fetch(`${url}${bust}`, { cache: 'no-store' })
+      if (!res.ok) return null
+      return Buffer.from(await res.arrayBuffer())
+    } catch {
+      return null
+    }
   }
 
   async getBytes(locator: string): Promise<Buffer | null> {
-    const { get } = await this.sdk()
+    const { get, head } = await this.sdk()
+
     try {
-      // useCache: false reads origin storage so overwrites are visible immediately.
       const result = await get(locator, {
         access: 'public',
         token: config.blobToken,
         useCache: false,
       })
       if (result?.stream) {
-        const res = new Response(result.stream as ReadableStream)
-        return Buffer.from(await res.arrayBuffer())
+        return Buffer.from(await new Response(result.stream as ReadableStream).arrayBuffer())
       }
     } catch {
-      /* not found or unsupported locator */
+      /* fall through */
     }
-    if (locator.startsWith('http')) return this.fetchBytes(locator)
-    const url = await this.urlFor(locator)
-    if (!url) return null
-    return this.fetchBytes(url)
+
+    try {
+      if (locator.startsWith('http')) return this.fetchUrl(locator)
+      const meta = await head(locator, { token: config.blobToken })
+      return this.fetchUrl(meta.url)
+    } catch {
+      return null
+    }
   }
 
   async delBytes(locator: string): Promise<void> {
@@ -154,31 +162,8 @@ class VercelBlobDriver implements Driver {
     }
   }
 
-  private async urlFor(key: string): Promise<string | null> {
-    const { head } = await this.sdk()
-    try {
-      const meta = await head(key, { token: config.blobToken })
-      return meta.url
-    } catch {
-      return null
-    }
-  }
-
   async putJson(key: string, value: unknown): Promise<void> {
-    const payload = Buffer.from(JSON.stringify(value))
-    const expected = payload.toString('utf8')
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) {
-        await this.delBytes(key)
-        await new Promise((r) => setTimeout(r, 150 * attempt))
-      }
-      await this.putBytes(key, payload, 'application/json')
-      const readBack = await this.getBytes(key)
-      if (readBack?.toString('utf8') === expected) return
-    }
-
-    throw new Error(`Blob metadata write failed to persist for ${key}`)
+    await this.putBytes(key, Buffer.from(JSON.stringify(value)), 'application/json')
   }
 
   async getJson<T>(key: string): Promise<T | null> {
@@ -195,23 +180,16 @@ class VercelBlobDriver implements Driver {
     await this.delBytes(key)
   }
 
-  async listJson<T>(prefix: string): Promise<T[]> {
+  async listKeys(prefix: string): Promise<string[]> {
     const { list } = await this.sdk()
     const normalized = prefix.endsWith('/') ? prefix : `${prefix}/`
     const found = await list({ prefix: normalized, limit: 1000, token: config.blobToken })
-    const results = await Promise.all(
-      found.blobs.map(async (b): Promise<T | null> => {
-        // Read by pathname when possible so we get the latest overwrite.
-        const pathname = b.pathname || null
-        const buf = pathname ? await this.getBytes(pathname) : await this.fetchBytes(b.url)
-        if (!buf) return null
-        try {
-          return JSON.parse(buf.toString('utf8')) as T
-        } catch {
-          return null
-        }
-      }),
-    )
+    return found.blobs.map((b) => b.pathname).filter(Boolean)
+  }
+
+  async listJson<T>(prefix: string): Promise<T[]> {
+    const keys = await this.listKeys(prefix)
+    const results = await Promise.all(keys.map((key) => this.getJson<T>(key)))
     return results.filter((r): r is Awaited<T> => r !== null)
   }
 }
