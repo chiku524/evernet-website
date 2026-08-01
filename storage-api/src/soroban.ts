@@ -43,7 +43,7 @@ async function invoke({
   method: string
   args: xdr.ScVal[]
   source: Keypair
-}): Promise<xdr.ScVal | null> {
+}): Promise<{ returnValue: xdr.ScVal | null; txHash: string } | null> {
   if (!hasOnChain()) return null
   const s = server()
   const account = await s.getAccount(source.publicKey())
@@ -76,7 +76,7 @@ async function invoke({
   if (get.status !== rpc.Api.GetTransactionStatus.SUCCESS) {
     throw new Error(`Soroban tx failed: ${get.status}`)
   }
-  return get.returnValue ?? null
+  return { returnValue: get.returnValue ?? null, txHash: send.hash }
 }
 
 export async function fetchOnChainProfile(address: string): Promise<Profile | null> {
@@ -133,8 +133,8 @@ export async function creditPurchaseOnChain(input: {
         nativeToScVal(30, { type: 'u32' }),
       ],
     })
-    if (ret) {
-      const profile = profileFromNative(scValToNative(ret), input.address)
+    if (ret?.returnValue) {
+      const profile = profileFromNative(scValToNative(ret.returnValue), input.address)
       setProfile(profile)
       return profile
     }
@@ -148,11 +148,11 @@ export async function registerObjectOnChain(input: {
   owner: string
   hashHex: string
   size: number
-}): Promise<void> {
-  if (!hasOnChain()) return
+}): Promise<string | null> {
+  if (!hasOnChain()) return null
   try {
     const hashBytes = Buffer.from(input.hashHex, 'hex')
-    await invoke({
+    const ret = await invoke({
       method: 'register_object',
       source: adminKey(),
       args: [
@@ -161,8 +161,10 @@ export async function registerObjectOnChain(input: {
         nativeToScVal(input.size, { type: 'u64' }),
       ],
     })
+    return ret?.txHash ?? null
   } catch (err) {
     console.warn('On-chain register_object failed; local mirror already updated', err)
+    return null
   }
 }
 

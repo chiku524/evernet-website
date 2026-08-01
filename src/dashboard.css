@@ -376,6 +376,17 @@
   font-size: 0.8rem;
 }
 
+.dash-hash-link {
+  color: var(--foam-deep);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.dash-hash-link:hover {
+  color: var(--ink);
+}
+
 .dash-file-icon {
   width: 2.25rem;
   height: 2.25rem;

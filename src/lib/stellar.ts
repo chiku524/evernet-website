@@ -104,6 +104,20 @@ export function shortenAddress(address: string): string {
   return `${address.slice(0, 4)}…${address.slice(-4)}`
 }
 
+/** StellarExpert transaction URL (Testnet = Stellar’s public test network). */
+export function explorerTxUrl(txHash: string, network: StellarNetworkId = loadPreferredNetwork()): string {
+  return getNetworkConfig(network).explorerTx(txHash)
+}
+
+/** Contract page on StellarExpert when we only have a content hash. */
+export function explorerContractUrl(
+  contractId: string = STORAGE_CONTRACT_ID,
+  network: StellarNetworkId = loadPreferredNetwork(),
+): string {
+  const slug = network === 'public' ? 'public' : 'testnet'
+  return `https://stellar.expert/explorer/${slug}/contract/${contractId}`
+}
+
 export const FREIGHTER_DOWNLOAD_URL = 'https://www.freighter.app/'
 
 export async function isFreighterInstalled(): Promise<boolean> {

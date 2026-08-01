@@ -18,6 +18,7 @@ import {
   listObjects,
   readBlob,
   registerObjectLocal,
+  patchObjectMeta,
   sha256Hex,
   writeBlob,
 } from './store.js'
@@ -125,7 +126,7 @@ app.post('/objects', requireWallet, upload.single('file'), async (req: AuthedReq
     }
 
     writeBlob(hash, buf)
-    const meta = {
+    const meta: import('./store.js').StoredObjectMeta = {
       hash,
       owner: req.wallet!,
       name,
@@ -136,9 +137,16 @@ app.post('/objects', requireWallet, upload.single('file'), async (req: AuthedReq
       shards: Math.max(4, Math.min(32, Math.ceil(buf.length / (256 * 1024)) * 4)),
     }
     const updated = registerObjectLocal(meta)
-    await registerObjectOnChain({ owner: req.wallet!, hashHex: hash, size: buf.length })
+    const registrationTx = await registerObjectOnChain({
+      owner: req.wallet!,
+      hashHex: hash,
+      size: buf.length,
+    })
+    const object = registrationTx
+      ? (patchObjectMeta(hash, { registrationTx }) ?? { ...meta, registrationTx })
+      : meta
 
-    res.status(201).json({ object: meta, profile: updated })
+    res.status(201).json({ object, profile: updated })
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Upload failed' })
   }

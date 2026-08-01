@@ -25,6 +25,8 @@ export type ApiObject = {
   encrypted: boolean
   createdAt: number
   shards: number
+  /** Soroban register_object transaction hash */
+  registrationTx?: string
 }
 
 function getToken(): string | null {

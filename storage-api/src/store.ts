@@ -20,6 +20,8 @@ export type StoredObjectMeta = {
   encrypted: boolean
   createdAt: number
   shards: number
+  /** Stellar/Soroban tx hash from register_object */
+  registrationTx?: string
 }
 
 type DbShape = {
@@ -152,6 +154,16 @@ export function registerObjectLocal(meta: StoredObjectMeta): Profile {
   db.objects[meta.hash] = meta
   save(db)
   return profile
+}
+
+export function patchObjectMeta(hash: string, patch: Partial<StoredObjectMeta>): StoredObjectMeta | null {
+  const db = load()
+  const obj = db.objects[hash]
+  if (!obj) return null
+  const next = { ...obj, ...patch, hash: obj.hash, owner: obj.owner }
+  db.objects[hash] = next
+  save(db)
+  return next
 }
 
 export function deleteObjectLocal(owner: string, hash: string): Profile {

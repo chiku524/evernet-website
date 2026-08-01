@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { BuyStorageModal } from '../components/dashboard/BuyStorageModal'
 import {
@@ -21,6 +21,8 @@ import {
   STORAGE_CONTRACT_ID,
   connectFreighter,
   disconnectFreighterLocal,
+  explorerContractUrl,
+  explorerTxUrl,
   getFreighterAddress,
   isFreighterInstalled,
   loadPreferredNetwork,
@@ -128,6 +130,39 @@ export default function Dashboard() {
   const usage = profile?.usedBytes ?? 0
   const quota = profile?.quotaBytes ?? 0
   const usagePct = quota > 0 ? Math.min(100, (usage / quota) * 100) : 0
+
+  function hashExplorerHref(obj: ApiObject): string {
+    if (obj.registrationTx) return explorerTxUrl(obj.registrationTx, network)
+    // Legacy uploads without a stored registration tx — open the contract on Testnet explorer
+    return explorerContractUrl(contractId, network)
+  }
+
+  function HashLink({
+    obj,
+    children,
+    className,
+  }: {
+    obj: ApiObject
+    children: ReactNode
+    className?: string
+  }) {
+    const href = hashExplorerHref(obj)
+    const title = obj.registrationTx
+      ? `View registration transaction on Stellar ${network === 'public' ? 'Mainnet' : 'Testnet'} explorer`
+      : `View storage contract on Stellar ${network === 'public' ? 'Mainnet' : 'Testnet'} explorer`
+    return (
+      <a
+        className={className ?? 'dash-hash-link'}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        title={title}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </a>
+    )
+  }
 
   async function connectAndAuth() {
     setBusy(true)
@@ -427,7 +462,8 @@ export default function Dashboard() {
                               <span>
                                 <strong>{item.name}</strong>
                                 <small>
-                                  {item.encrypted ? 'Encrypted' : 'Plain'} · {item.hash.slice(0, 10)}…
+                                  {item.encrypted ? 'Encrypted' : 'Plain'} ·{' '}
+                                  <HashLink obj={item}>{item.hash.slice(0, 10)}…</HashLink>
                                 </small>
                               </span>
                             </div>
@@ -464,9 +500,26 @@ export default function Dashboard() {
                 <h2>{selectedObj.name}</h2>
                 <dl className="dash-meta">
                   <div>
-                    <dt>Hash</dt>
-                    <dd style={{ wordBreak: 'break-all', fontSize: '0.8rem' }}>{selectedObj.hash}</dd>
+                    <dt>Content hash</dt>
+                    <dd style={{ wordBreak: 'break-all', fontSize: '0.8rem' }}>
+                      <HashLink obj={selectedObj}>{selectedObj.hash}</HashLink>
+                    </dd>
                   </div>
+                  {selectedObj.registrationTx && (
+                    <div>
+                      <dt>Registration tx</dt>
+                      <dd style={{ wordBreak: 'break-all', fontSize: '0.8rem' }}>
+                        <a
+                          className="dash-hash-link"
+                          href={explorerTxUrl(selectedObj.registrationTx, network)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {selectedObj.registrationTx}
+                        </a>
+                      </dd>
+                    </div>
+                  )}
                   <div>
                     <dt>Owner</dt>
                     <dd>{shortenAddress(selectedObj.owner)}</dd>
