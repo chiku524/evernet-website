@@ -610,3 +610,309 @@
     animation: none;
   }
 }
+
+.dash-buy-btn {
+  width: 100%;
+  margin-top: 0.85rem;
+  justify-content: center;
+}
+
+.dash-linkish {
+  color: var(--foam);
+  font-weight: 600;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* —— Buy storage / Stellar pay modal —— */
+.pay-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.pay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 46, 47, 0.55);
+  border: none;
+  cursor: pointer;
+}
+
+.pay-modal {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 40rem);
+  max-height: min(92vh, 52rem);
+  overflow: auto;
+  background: var(--chalk);
+  border-radius: 10px;
+  padding: 1.35rem 1.35rem 1.5rem;
+  box-shadow: 0 24px 60px rgba(11, 46, 47, 0.28);
+}
+
+.pay-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
+.pay-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--foam-deep);
+}
+
+.pay-head h2 {
+  font-family: var(--font-display);
+  font-size: 1.65rem;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  margin-top: 0.25rem;
+}
+
+.pay-close {
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0.35rem 0.5rem;
+}
+
+.pay-lead {
+  margin-top: 0.75rem;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 0.98rem;
+}
+
+.pay-network {
+  display: inline-flex;
+  margin-top: 1.1rem;
+  padding: 0.2rem;
+  background: rgba(11, 46, 47, 0.06);
+  border-radius: var(--radius);
+  gap: 0.15rem;
+}
+
+.pay-net-btn {
+  padding: 0.45rem 0.9rem;
+  border-radius: 3px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.pay-net-btn.active {
+  background: var(--ink);
+  color: var(--white);
+}
+
+.pay-wallet {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.pay-wallet strong {
+  display: block;
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.pay-wallet p {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.pay-wallet code {
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+
+.pay-wallet a {
+  color: var(--foam-deep);
+  font-weight: 600;
+}
+
+.pay-plans {
+  margin-top: 1.1rem;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.pay-plan {
+  position: relative;
+  text-align: left;
+  padding: 0.95rem 1rem;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'name price'
+    'bytes price'
+    'desc desc';
+  gap: 0.15rem 1rem;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.pay-plan:hover {
+  border-color: rgba(61, 184, 160, 0.45);
+}
+
+.pay-plan.selected {
+  border-color: var(--foam-deep);
+  background: rgba(61, 184, 160, 0.1);
+}
+
+.pay-plan strong {
+  grid-area: name;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+
+.pay-bytes {
+  grid-area: bytes;
+  color: var(--foam-deep);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.pay-price {
+  grid-area: price;
+  align-self: center;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.2rem;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+
+.pay-desc {
+  grid-area: desc;
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin-top: 0.35rem;
+}
+
+.pay-badge {
+  position: absolute;
+  top: -0.45rem;
+  right: 0.75rem;
+  background: var(--copper);
+  color: var(--white);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.45rem;
+  border-radius: 3px;
+}
+
+.pay-summary {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.pay-summary div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.92rem;
+}
+
+.pay-summary span {
+  color: var(--muted);
+}
+
+.pay-summary code,
+.pay-summary strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.pay-error {
+  margin-top: 0.85rem;
+  color: #a33d2d;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.pay-success {
+  margin-top: 0.85rem;
+  color: var(--foam-deep);
+  font-size: 0.92rem;
+}
+
+.pay-success a {
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.pay-cta {
+  width: 100%;
+  justify-content: center;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+}
+
+.pay-history {
+  margin-top: 1.15rem;
+}
+
+.pay-history-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+}
+
+.pay-history ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.pay-history li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.pay-history a {
+  color: var(--foam-deep);
+  font-weight: 600;
+}
+
+.pay-footnote {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+

@@ -1,7 +1,12 @@
+import { getTotalQuotaBytes } from './billing'
+
 const DB_NAME = 'evernet-vault'
 const DB_VERSION = 1
 const STORE = 'items'
-export const STORAGE_QUOTA_BYTES = 5 * 1024 * 1024 * 1024 // 5 GB demo plan
+
+export function getQuotaBytes() {
+  return getTotalQuotaBytes()
+}
 
 export type VaultItem = {
   id: string
@@ -263,9 +268,19 @@ export async function createFolder(name: string, parentId: string | null): Promi
 }
 
 export async function uploadFiles(files: FileList | File[], parentId: string | null): Promise<VaultItem[]> {
+  const list = Array.from(files)
+  const used = await getUsageBytes()
+  const incoming = list.reduce((sum, f) => sum + f.size, 0)
+  const quota = getTotalQuotaBytes()
+  if (used + incoming > quota) {
+    throw new Error(
+      `Not enough storage. Need ${formatBytes(incoming)}, ${formatBytes(Math.max(0, quota - used))} free. Buy more with XLM.`,
+    )
+  }
+
   const created: VaultItem[] = []
   const now = Date.now()
-  for (const file of Array.from(files)) {
+  for (const file of list) {
     const item: VaultItem = {
       id: uid(),
       name: file.name,

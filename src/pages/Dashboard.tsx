@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { BuyStorageModal } from '../components/dashboard/BuyStorageModal'
+import { getTotalQuotaBytes, listPurchases } from '../lib/billing'
 import {
-  STORAGE_QUOTA_BYTES,
   type VaultItem,
   createFolder,
   downloadItem,
@@ -16,6 +17,13 @@ import {
   toggleStar,
   uploadFiles,
 } from '../lib/vault'
+import {
+  connectFreighter,
+  getFreighterAddress,
+  loadPreferredNetwork,
+  shortenAddress,
+  type StellarNetworkId,
+} from '../lib/stellar'
 
 type View = 'files' | 'starred' | 'recent' | 'trash'
 
@@ -58,6 +66,7 @@ function formatDate(ts: number): string {
 export default function Dashboard() {
   const [items, setItems] = useState<VaultItem[]>([])
   const [usage, setUsage] = useState(0)
+  const [quota, setQuota] = useState(() => getTotalQuotaBytes())
   const [view, setView] = useState<View>('files')
   const [folderId, setFolderId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -66,6 +75,9 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [buyOpen, setBuyOpen] = useState(false)
+  const [wallet, setWallet] = useState<string | null>(null)
+  const [network, setNetwork] = useState<StellarNetworkId>(() => loadPreferredNetwork())
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
 
@@ -73,10 +85,13 @@ export default function Dashboard() {
     const [all, used] = await Promise.all([listItems(), getUsageBytes()])
     setItems(all)
     setUsage(used)
+    setQuota(getTotalQuotaBytes())
   }, [])
 
   useEffect(() => {
     void refresh()
+    void getFreighterAddress().then(setWallet)
+    setNetwork(loadPreferredNetwork())
   }, [refresh])
 
   useEffect(() => {
@@ -128,7 +143,18 @@ export default function Dashboard() {
   }, [items, view, folderId, query])
 
   const selectedItem = items.find((i) => i.id === selected) ?? null
-  const usagePct = Math.min(100, (usage / STORAGE_QUOTA_BYTES) * 100)
+  const usagePct = Math.min(100, (usage / quota) * 100)
+  const purchaseCount = listPurchases().length
+
+  async function connectWallet() {
+    try {
+      const addr = await connectFreighter()
+      setWallet(addr)
+      setToast('Freighter connected')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not connect wallet')
+    }
+  }
 
   async function withBusy(action: () => Promise<void>, message?: string) {
     setBusy(true)
@@ -203,20 +229,38 @@ export default function Dashboard() {
           <div className="dash-quota-top">
             <span>Storage</span>
             <span>
-              {formatBytes(usage)} / {formatBytes(STORAGE_QUOTA_BYTES)}
+              {formatBytes(usage)} / {formatBytes(quota)}
             </span>
           </div>
           <div className="dash-quota-track">
             <div className="dash-quota-fill" style={{ width: `${usagePct}%` }} />
           </div>
-          <p className="dash-quota-note">Paid with XLM · encrypted at rest</p>
+          <p className="dash-quota-note">
+            {purchaseCount > 0
+              ? `${purchaseCount} Stellar purchase${purchaseCount > 1 ? 's' : ''} credited`
+              : '5 GB free · expand with XLM'}
+          </p>
+          <button type="button" className="dash-btn primary dash-buy-btn" onClick={() => setBuyOpen(true)}>
+            Buy storage
+          </button>
         </div>
 
         <div className="dash-network">
           <span className="dash-pulse" aria-hidden="true" />
           <div>
-            <strong>Network live</strong>
-            <p>12 storage nodes · Stellar rail ready</p>
+            <strong>Stellar {network === 'public' ? 'Mainnet' : 'Testnet'}</strong>
+            <p>
+              {wallet ? (
+                <>Wallet {shortenAddress(wallet)}</>
+              ) : (
+                <>
+                  <button type="button" className="dash-linkish" onClick={() => void connectWallet()}>
+                    Connect Freighter
+                  </button>
+                  {' · '}pay storage in XLM
+                </>
+              )}
+            </p>
           </div>
         </div>
       </aside>
@@ -274,6 +318,9 @@ export default function Dashboard() {
                 type="search"
               />
             </label>
+            <button type="button" className="dash-btn ghost" onClick={() => setBuyOpen(true)}>
+              Buy with XLM
+            </button>
             {view !== 'trash' && (
               <>
                 <button type="button" className="dash-btn ghost" onClick={() => void handleNewFolder()} disabled={busy}>
@@ -491,9 +538,12 @@ export default function Dashboard() {
                 <ul className="dash-detail-list">
                   <li>End-to-end encryption</li>
                   <li>Sharded distribution</li>
-                  <li>XLM storage payments (coming)</li>
-                  <li>S3-compatible APIs (roadmap)</li>
+                  <li>Buy more capacity with XLM on Stellar</li>
+                  <li>Freighter wallet payments via Horizon</li>
                 </ul>
+                <button type="button" className="dash-btn primary" style={{ marginTop: '1rem' }} onClick={() => setBuyOpen(true)}>
+                  Buy storage with XLM
+                </button>
               </>
             )}
           </aside>
@@ -505,6 +555,16 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      <BuyStorageModal
+        open={buyOpen}
+        onClose={() => setBuyOpen(false)}
+        onPurchased={() => {
+          void refresh()
+          setNetwork(loadPreferredNetwork())
+        }}
+        showToast={setToast}
+      />
 
       {toast && (
         <div className="dash-toast" role="status">
