@@ -53,4 +53,16 @@ cd sdk && npm install && npm run build
 npm run example:encrypt-upload
 ```
 
+## Publish to npm
+
+```bash
+npm login
+cd sdk
+npm publish --access public
+```
+
+Requires access to the `@evernet` org on npm (create the org once at https://www.npmjs.com/org/create).
+If the scope is unavailable, rename `"name"` in `package.json` to `evernet-sdk` and publish unscoped.
+
 Docs: https://evernet.tech/docs#sdk · OpenAPI: https://evernet-storage-api.vercel.app/openapi.json
+· Reference app: https://evernet.tech/labs/notes

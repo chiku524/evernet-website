@@ -427,6 +427,15 @@ button.dash-crumb {
   max-width: 28rem;
 }
 
+.dash-pass-remember {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
 .dash-folder-field {
   display: grid;
   gap: 0.35rem;

@@ -13,6 +13,7 @@ export type {
   EncryptUploadInput,
   EvernetObject,
   EvernetProfile,
+  EvernetProject,
   PublicConfig,
   UploadMeta,
   UsageInfo,

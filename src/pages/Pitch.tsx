@@ -260,8 +260,8 @@ export default function Pitch() {
           </div>
           <p className="pitch-note">
             Free tier anchors activation (5 GB). Paid leases extend quota on-chain after Horizon settlement.
-            Live developer HTTP API, OpenAPI, TypeScript SDK, and API keys today; future upside includes project-level
-            metering pools, node incentives, and enterprise SLA tiers.
+            Live developer HTTP API, OpenAPI, TypeScript SDK, API keys, project soft-cap pools, and a reference
+            encrypted-notes dApp today; future upside includes node incentives and enterprise SLA tiers.
           </p>
         </Section>
 
@@ -311,7 +311,7 @@ export default function Pitch() {
             </div>
             <div>
               <span>Next</span>
-              <p>Hardened encryption UX (user passphrases), audits, compliance logging options.</p>
+              <p>Audits, compliance logging options, npm-published SDK distribution.</p>
             </div>
             <div>
               <span>Then</span>

@@ -17,7 +17,10 @@ const toc = [
   { id: 'api', label: 'Developer API' },
   { id: 'api-auth', label: 'API authentication' },
   { id: 'sdk', label: 'TypeScript SDK' },
+  { id: 'passphrase', label: 'Vault passphrase' },
   { id: 'api-keys', label: 'API keys' },
+  { id: 'projects', label: 'Project pools' },
+  { id: 'labs', label: 'Reference app' },
   { id: 'api-reference', label: 'API reference' },
   { id: 'api-examples', label: 'API examples' },
   { id: 'api-cors', label: 'CORS & access' },
@@ -282,8 +285,8 @@ export default function Docs() {
             <ul>
               <li>Files are encrypted in the browser before upload — the API stores ciphertext.</li>
               <li>
-                v1 uses a wallet-derived passphrase helper for convenience. For higher security, treat this as a demo
-                model and prefer a strong personal passphrase in future versions.
+                The vault prompts for a <a href="#passphrase">personal passphrase</a> (recommended). Convenience mode
+                still offers a wallet-derived helper for demos.
               </li>
               <li>
                 The login challenge is a sequence-0 transaction with a random nonce and a five-minute expiry. It is not
@@ -377,6 +380,24 @@ const plain = await client.downloadAndDecrypt(object.hash, walletPassphrase(addr
               Runnable example:{' '}
               <code>npm run sdk:example -- {API_BASE}</code>
             </p>
+            <p>
+              Package source: <code>sdk/</code>. Publish when ready:{' '}
+              <code>cd sdk && npm publish --access public</code> (requires npm login + rights to the{' '}
+              <code>@evernet</code> scope, or rename to <code>evernet-sdk</code>).
+            </p>
+          </section>
+
+          <section id="passphrase">
+            <h2>Vault passphrase</h2>
+            <p>
+              Uploads and downloads in the vault ask you to unlock encryption. Choose a personal passphrase (min 8
+              characters) or convenience mode. Optionally remember on this device (stored in the browser — never sent to
+              the API).
+            </p>
+            <p>
+              Files encrypted with different passphrases cannot be mixed; wrong passphrase fails decryption. Prefer a
+              strong personal secret over convenience mode for real data.
+            </p>
           </section>
 
           <section id="api-keys">
@@ -390,8 +411,38 @@ const plain = await client.downloadAndDecrypt(object.hash, walletPassphrase(addr
   -H "Authorization: Bearer $EVERNET_API_KEY"`}</code>
             </pre>
             <p>
-              Metering today: wallet quota (<code>usedBytes</code> / <code>quotaBytes</code>) plus soft rate limits (
-              <code>X-RateLimit-*</code> headers, ~120 req/min per identity). Project-level billing pools are next.
+              Metering: wallet quota (<code>usedBytes</code> / <code>quotaBytes</code>), optional{' '}
+              <a href="#projects">project soft caps</a>, and rate-limit headers (~120 req/min per identity).
+            </p>
+          </section>
+
+          <section id="projects">
+            <h2>Project pools</h2>
+            <p>
+              Projects are named soft caps inside a wallet’s paid quota. Create them in the vault protocol panel, then
+              bind an API key with <code>projectId</code>. Uploads through that key credit the project’s{' '}
+              <code>usedBytes</code> and fail with 402 when the soft cap is exceeded (wallet quota still applies).
+            </p>
+            <pre className="docs-code">
+              <code>{`# wallet JWT required
+curl -X POST ${API_BASE}/projects \\
+  -H "Authorization: Bearer $JWT" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"mobile-app","maxBytes":2147483648}'
+
+curl -X POST ${API_BASE}/keys \\
+  -H "Authorization: Bearer $JWT" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"mobile-prod","projectId":"<projectId>"}'`}</code>
+            </pre>
+          </section>
+
+          <section id="labs">
+            <h2>Reference app</h2>
+            <p>
+              Try the SDK in a tiny encrypted-notes dApp:{' '}
+              <Link to="/labs/notes">evernet.tech/labs/notes</Link>. It connects a wallet, encrypts JSON notes
+              client-side, stores them under <code>labs/encrypted-notes</code>, and lists them from the same vault.
             </p>
           </section>
 
@@ -496,7 +547,17 @@ const plain = await client.downloadAndDecrypt(object.hash, walletPassphrase(addr
                       <code>/keys</code>
                     </td>
                     <td>JWT</td>
-                    <td>Create / list / revoke API keys</td>
+                    <td>Create / list / revoke API keys (optional projectId)</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>GET/POST/PATCH/DELETE</code>
+                    </td>
+                    <td>
+                      <code>/projects</code>
+                    </td>
+                    <td>JWT</td>
+                    <td>Project billing pools + soft caps</td>
                   </tr>
                   <tr>
                     <td>
@@ -725,6 +786,9 @@ async function upload(token: string, bytes: Blob, name: string, folder = '') {
               </li>
               <li>
                 Developer API: <a href="#api">/docs#api</a>
+              </li>
+              <li>
+                Reference notes app: <Link to="/labs/notes">/labs/notes</Link>
               </li>
               <li>
                 OpenAPI:{' '}

@@ -6,6 +6,7 @@ import type {
   EncryptUploadInput,
   EvernetObject,
   EvernetProfile,
+  EvernetProject,
   PublicConfig,
   UploadMeta,
   UsageInfo,
@@ -277,14 +278,40 @@ export class EvernetClient {
     return res.keys
   }
 
-  async createApiKey(name: string): Promise<CreatedApiKey> {
+  async createApiKey(name: string, projectId?: string): Promise<CreatedApiKey> {
     return this.json('/keys', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, projectId }),
     })
   }
 
   async revokeApiKey(id: string): Promise<void> {
     await this.json(`/keys/${id}`, { method: 'DELETE' })
+  }
+
+  async listProjects(): Promise<EvernetProject[]> {
+    const res = await this.json<{ projects: EvernetProject[] }>('/projects')
+    return res.projects
+  }
+
+  async createProject(input: { name: string; maxBytes?: number | null }): Promise<EvernetProject> {
+    return this.json('/projects', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  }
+
+  async updateProject(
+    id: string,
+    patch: { name?: string; maxBytes?: number | null },
+  ): Promise<EvernetProject> {
+    return this.json(`/projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  }
+
+  async archiveProject(id: string): Promise<void> {
+    await this.json(`/projects/${id}`, { method: 'DELETE' })
   }
 }

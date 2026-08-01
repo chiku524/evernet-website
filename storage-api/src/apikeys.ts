@@ -5,6 +5,8 @@ export type ApiKeyRecord = {
   id: string
   owner: string
   name: string
+  /** Optional project pool this key draws from. */
+  projectId?: string
   /** SHA-256 hex of the full secret key. */
   keyHash: string
   prefix: string
@@ -17,6 +19,7 @@ export type PublicApiKey = {
   id: string
   name: string
   prefix: string
+  projectId?: string
   createdAt: number
   lastUsedAt?: number
   revokedAt?: number
@@ -46,6 +49,7 @@ function toPublic(rec: ApiKeyRecord): PublicApiKey {
     id: rec.id,
     name: rec.name,
     prefix: rec.prefix,
+    projectId: rec.projectId,
     createdAt: rec.createdAt,
     lastUsedAt: rec.lastUsedAt,
     revokedAt: rec.revokedAt,
@@ -79,6 +83,7 @@ export async function listApiKeys(owner: string): Promise<PublicApiKey[]> {
 export async function createApiKey(
   owner: string,
   name: string,
+  projectId?: string,
 ): Promise<PublicApiKey & { key: string }> {
   const trimmed = name.trim().slice(0, 64) || 'default'
   const id = randomBytes(8).toString('hex')
@@ -88,6 +93,7 @@ export async function createApiKey(
     id,
     owner,
     name: trimmed,
+    projectId: projectId || undefined,
     keyHash: hashKey(key),
     prefix: `${KEY_PREFIX}${id}`,
     createdAt: Date.now(),
@@ -117,7 +123,7 @@ export function looksLikeApiKey(token: string): boolean {
 /** Resolve a raw API key to its owning wallet address, or null. */
 export async function resolveApiKey(
   token: string,
-): Promise<{ owner: string; keyId: string; keyName: string } | null> {
+): Promise<{ owner: string; keyId: string; keyName: string; projectId?: string } | null> {
   if (!looksLikeApiKey(token)) return null
   const rest = token.slice(KEY_PREFIX.length)
   const underscore = rest.indexOf('_')
@@ -128,5 +134,10 @@ export async function resolveApiKey(
   if (rec.keyHash !== hashKey(token)) return null
   rec.lastUsedAt = Date.now()
   await driver.putJson(keyRecordPath(id), rec).catch(() => undefined)
-  return { owner: rec.owner, keyId: rec.id, keyName: rec.name }
+  return {
+    owner: rec.owner,
+    keyId: rec.id,
+    keyName: rec.name,
+    projectId: rec.projectId,
+  }
 }

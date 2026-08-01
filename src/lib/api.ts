@@ -226,6 +226,7 @@ export type ApiKeyInfo = {
   id: string
   name: string
   prefix: string
+  projectId?: string
   createdAt: number
   lastUsedAt?: number
   revokedAt?: number
@@ -236,14 +237,46 @@ export async function listApiKeys(): Promise<ApiKeyInfo[]> {
   return res.keys
 }
 
-export async function createApiKey(name: string): Promise<ApiKeyInfo & { key: string }> {
+export async function createApiKey(
+  name: string,
+  projectId?: string,
+): Promise<ApiKeyInfo & { key: string }> {
   return api('/keys', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, projectId }),
   })
 }
 
 export async function revokeApiKey(id: string): Promise<void> {
   await api(`/keys/${id}`, { method: 'DELETE' })
+}
+
+export type ApiProject = {
+  id: string
+  name: string
+  maxBytes: number | null
+  usedBytes: number
+  createdAt: number
+  remainingBytes: number | null
+}
+
+export async function listProjects(): Promise<ApiProject[]> {
+  const res = await api<{ projects: ApiProject[] }>('/projects')
+  return res.projects
+}
+
+export async function createProject(input: {
+  name: string
+  maxBytes?: number | null
+}): Promise<ApiProject> {
+  return api('/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function archiveProject(id: string): Promise<void> {
+  await api(`/projects/${id}`, { method: 'DELETE' })
 }

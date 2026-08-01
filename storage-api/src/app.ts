@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import cors from 'cors'
-import express from 'express'
+import express, { type Response } from 'express'
 import multer from 'multer'
 import {
   buildChallenge,
@@ -22,6 +22,15 @@ import {
 import { normalizeFolderPath } from './paths.js'
 import { createApiKey, listApiKeys, revokeApiKey } from './apikeys.js'
 import { openApiSpec } from './openapi.js'
+import {
+  archiveProject,
+  createProject,
+  creditProjectUpload,
+  debitProjectUpload,
+  getProject,
+  listProjects,
+  updateProject,
+} from './projects.js'
 import { publicObject, publicObjects } from './publicMeta.js'
 import { REQUESTS_PER_MINUTE, rateLimit } from './ratelimit.js'
 import {
@@ -151,13 +160,25 @@ app.get('/profile', requireWallet, async (req: AuthedRequest, res) => {
 app.get('/usage', requireWallet, async (req: AuthedRequest, res) => {
   try {
     const profile = await getMergedProfile(req.wallet!)
+    const project = req.projectId ? await getProject(req.projectId) : null
     res.json({
       profile,
       auth: {
         type: req.authType || 'jwt',
         keyId: req.apiKeyId,
         keyName: req.apiKeyName,
+        projectId: req.projectId,
       },
+      project: project
+        ? {
+            id: project.id,
+            name: project.name,
+            maxBytes: project.maxBytes,
+            usedBytes: project.usedBytes,
+            remainingBytes:
+              project.maxBytes == null ? null : Math.max(0, project.maxBytes - project.usedBytes),
+          }
+        : null,
       limits: { requestsPerMinute: REQUESTS_PER_MINUTE },
     })
   } catch (err) {
@@ -165,12 +186,17 @@ app.get('/usage', requireWallet, async (req: AuthedRequest, res) => {
   }
 })
 
+function requireWalletSession(req: AuthedRequest, res: Response): boolean {
+  if (req.authType === 'api_key') {
+    res.status(403).json({ error: 'This action requires a wallet session, not an API key' })
+    return false
+  }
+  return true
+}
+
 app.get('/keys', requireWallet, async (req: AuthedRequest, res) => {
   try {
-    if (req.authType === 'api_key') {
-      res.status(403).json({ error: 'Manage API keys with a wallet session, not an API key' })
-      return
-    }
+    if (!requireWalletSession(req, res)) return
     res.json({ keys: await listApiKeys(req.wallet!) })
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'List keys failed' })
@@ -179,11 +205,16 @@ app.get('/keys', requireWallet, async (req: AuthedRequest, res) => {
 
 app.post('/keys', requireWallet, async (req: AuthedRequest, res) => {
   try {
-    if (req.authType === 'api_key') {
-      res.status(403).json({ error: 'Create API keys with a wallet session, not an API key' })
-      return
+    if (!requireWalletSession(req, res)) return
+    const projectId = req.body?.projectId ? String(req.body.projectId) : undefined
+    if (projectId) {
+      const project = await getProject(projectId)
+      if (!project || project.owner !== req.wallet! || project.archivedAt) {
+        res.status(400).json({ error: 'Invalid projectId for this wallet' })
+        return
+      }
     }
-    const created = await createApiKey(req.wallet!, String(req.body?.name || 'default'))
+    const created = await createApiKey(req.wallet!, String(req.body?.name || 'default'), projectId)
     res.status(201).json(created)
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Create key failed' })
@@ -192,10 +223,7 @@ app.post('/keys', requireWallet, async (req: AuthedRequest, res) => {
 
 app.delete('/keys/:id', requireWallet, async (req: AuthedRequest, res) => {
   try {
-    if (req.authType === 'api_key') {
-      res.status(403).json({ error: 'Revoke API keys with a wallet session, not an API key' })
-      return
-    }
+    if (!requireWalletSession(req, res)) return
     const ok = await revokeApiKey(req.wallet!, String(req.params.id))
     if (!ok) {
       res.status(404).json({ error: 'Key not found' })
@@ -204,6 +232,65 @@ app.delete('/keys/:id', requireWallet, async (req: AuthedRequest, res) => {
     res.json({ ok: true })
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Revoke key failed' })
+  }
+})
+
+app.get('/projects', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    if (!requireWalletSession(req, res)) return
+    res.json({ projects: await listProjects(req.wallet!) })
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'List projects failed' })
+  }
+})
+
+app.post('/projects', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    if (!requireWalletSession(req, res)) return
+    const maxBytes =
+      req.body?.maxBytes === undefined || req.body?.maxBytes === null
+        ? null
+        : Number(req.body.maxBytes)
+    const project = await createProject(req.wallet!, {
+      name: String(req.body?.name || 'project'),
+      maxBytes,
+    })
+    res.status(201).json(project)
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Create project failed' })
+  }
+})
+
+app.patch('/projects/:id', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    if (!requireWalletSession(req, res)) return
+    const patch: { name?: string; maxBytes?: number | null } = {}
+    if (req.body?.name !== undefined) patch.name = String(req.body.name)
+    if (req.body?.maxBytes !== undefined) {
+      patch.maxBytes = req.body.maxBytes === null ? null : Number(req.body.maxBytes)
+    }
+    const project = await updateProject(req.wallet!, String(req.params.id), patch)
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    res.json(project)
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Update project failed' })
+  }
+})
+
+app.delete('/projects/:id', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    if (!requireWalletSession(req, res)) return
+    const ok = await archiveProject(req.wallet!, String(req.params.id))
+    if (!ok) {
+      res.status(404).json({ error: 'Project not found' })
+      return
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Archive project failed' })
   }
 })
 
@@ -323,6 +410,20 @@ app.post('/objects', requireWallet, upload.single('file'), async (req: AuthedReq
       return
     }
 
+    if (req.projectId) {
+      const project = await getProject(req.projectId)
+      if (!project || project.archivedAt || project.owner !== owner) {
+        res.status(400).json({ error: 'Invalid project for API key' })
+        return
+      }
+      if (project.maxBytes != null && project.usedBytes + buf.length > project.maxBytes) {
+        res.status(402).json({
+          error: `Project quota exceeded (${project.usedBytes + buf.length} > ${project.maxBytes})`,
+        })
+        return
+      }
+    }
+
     const blobRef = await writeBlob(owner, buf)
     const meta: StoredObjectMeta = {
       hash,
@@ -335,8 +436,17 @@ app.post('/objects', requireWallet, upload.single('file'), async (req: AuthedReq
       createdAt: Date.now(),
       shards: Math.max(4, Math.min(32, Math.ceil(buf.length / (256 * 1024)) * 4)),
       blobRef,
+      projectId: req.projectId,
     }
     const updated = await registerObjectLocal(meta)
+    if (req.projectId) {
+      const credited = await creditProjectUpload(req.projectId, buf.length)
+      if (!credited.ok) {
+        await deleteObjectLocal(owner, hash).catch(() => undefined)
+        res.status(402).json({ error: credited.error })
+        return
+      }
+    }
     const registrationTx = await registerObjectOnChain({ owner, hashHex: hash, size: buf.length })
     const object = registrationTx
       ? ((await patchObjectMeta(owner, hash, { registrationTx })) ?? { ...meta, registrationTx })
@@ -376,7 +486,11 @@ app.patch('/objects/:hash', requireWallet, async (req: AuthedRequest, res) => {
 app.delete('/objects/:hash', requireWallet, async (req: AuthedRequest, res) => {
   try {
     const hash = String(req.params.hash)
+    const existing = await getObject(req.wallet!, hash)
     const profile = await deleteObjectLocal(req.wallet!, hash)
+    if (existing?.projectId) {
+      await debitProjectUpload(existing.projectId, existing.size).catch(() => undefined)
+    }
     await deleteObjectOnChain({ owner: req.wallet!, hashHex: hash })
     res.json({ ok: true, profile, folders: await listFolders(req.wallet!) })
   } catch (err) {

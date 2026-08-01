@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { BuyStorageModal } from '../components/dashboard/BuyStorageModal'
+import { PassphraseModal } from '../components/dashboard/PassphraseModal'
 import {
   type ApiKeyInfo,
   type ApiObject,
   type ApiProfile,
+  type ApiProject,
   apiBase,
+  archiveProject,
   clearSession,
   createApiKey,
   createFolder,
+  createProject,
   deleteFolder,
   deleteObject,
   downloadObject,
@@ -16,6 +20,7 @@ import {
   getProfile,
   hasSession,
   listApiKeys,
+  listProjects,
   listVault,
   loginWithWallet,
   renameFolder,
@@ -24,7 +29,8 @@ import {
   updateObject,
   uploadObject,
 } from '../lib/api'
-import { decryptBlob, encryptFile, walletPassphrase } from '../lib/crypto'
+import { decryptBlob, encryptFile } from '../lib/crypto'
+import { clearVaultPassphrase, resolveVaultPassphrase } from '../lib/vault-passphrase'
 import { fileIconKind, formatBytes } from '../lib/format'
 import { filesFromDataTransfer } from '../lib/fs-drop'
 import {
@@ -115,11 +121,22 @@ export default function Dashboard() {
   const [contractId, setContractId] = useState(STORAGE_CONTRACT_ID)
   const [apiOnline, setApiOnline] = useState<boolean | null>(null)
   const [apiKeys, setApiKeys] = useState<ApiKeyInfo[]>([])
+  const [projects, setProjects] = useState<ApiProject[]>([])
   const [createdKeySecret, setCreatedKeySecret] = useState<string | null>(null)
   const [keyName, setKeyName] = useState('server')
+  const [keyProjectId, setKeyProjectId] = useState('')
+  const [projectName, setProjectName] = useState('app')
+  const [projectMaxGb, setProjectMaxGb] = useState('')
+  const [passOpen, setPassOpen] = useState(false)
+  const [passReason, setPassReason] = useState<'unlock' | 'retry'>('unlock')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
+  const pendingUpload = useRef<{
+    entries: Array<{ file: File; relativeFolder?: string }>
+    targetFolder: string
+  } | null>(null)
+  const pendingDownload = useRef<ApiObject | null>(null)
 
   function clearDragState() {
     dragDepth.current = 0
@@ -146,11 +163,17 @@ export default function Dashboard() {
       setAuthed(false)
       return
     }
-    const [p, listing, keys] = await Promise.all([getProfile(), listVault(), listApiKeys().catch(() => [])])
+    const [p, listing, keys, projectList] = await Promise.all([
+      getProfile(),
+      listVault(),
+      listApiKeys().catch(() => []),
+      listProjects().catch(() => []),
+    ])
     setProfile(p)
     setObjects(listing.objects)
     setFolders(listing.folders)
     setApiKeys(keys)
+    setProjects(projectList)
     setAuthed(true)
   }, [])
 
@@ -290,6 +313,7 @@ export default function Dashboard() {
 
   async function disconnect() {
     clearSession()
+    clearVaultPassphrase()
     await disconnectWallet()
     saveAddress(null)
     setWallet(null)
@@ -297,27 +321,21 @@ export default function Dashboard() {
     setProfile(null)
     setObjects([])
     setFolders([])
+    setApiKeys([])
+    setProjects([])
     setSelected(null)
     setSelectedFolder(null)
     setCurrentFolder('')
     setToast('Disconnected — vault hidden')
   }
 
-  async function handleUpload(
-    fileList: Array<{ file: File; relativeFolder?: string }> | FileList | File[],
-    targetFolder = currentFolder,
+  async function runUpload(
+    entries: Array<{ file: File; relativeFolder?: string }>,
+    targetFolder: string,
+    pass: string,
   ) {
-    if (!authed || !wallet) {
-      setToast('Connect a Stellar wallet to upload')
-      return
-    }
-    const entries = Array.isArray(fileList)
-      ? fileList.map((f) => ('file' in f ? f : { file: f as File, relativeFolder: '' }))
-      : Array.from(fileList).map((file) => ({ file, relativeFolder: '' }))
-
     setBusy(true)
     try {
-      const pass = walletPassphrase(wallet)
       let uploaded = 0
       for (const entry of entries) {
         const relative = normalizeFolderPath(entry.relativeFolder || '')
@@ -346,17 +364,47 @@ export default function Dashboard() {
     }
   }
 
-  async function handleDownload(obj: ApiObject) {
-    if (!wallet) return
+  async function handleUpload(
+    fileList: Array<{ file: File; relativeFolder?: string }> | FileList | File[],
+    targetFolder = currentFolder,
+  ) {
+    if (!authed || !wallet) {
+      setToast('Connect a Stellar wallet to upload')
+      return
+    }
+    const entries = Array.isArray(fileList)
+      ? fileList.map((f) => ('file' in f ? f : { file: f as File, relativeFolder: '' }))
+      : Array.from(fileList).map((file) => ({ file, relativeFolder: '' }))
+
+    const pass = resolveVaultPassphrase(wallet)
+    if (!pass) {
+      pendingUpload.current = { entries, targetFolder }
+      pendingDownload.current = null
+      setPassReason('unlock')
+      setPassOpen(true)
+      return
+    }
+    await runUpload(entries, targetFolder, pass)
+  }
+
+  async function runDownload(obj: ApiObject, pass: string) {
     setBusy(true)
     try {
       const blob = await downloadObject(obj.hash)
       let out: Blob = blob
       let name = obj.name
       if (obj.encrypted) {
-        const dec = await decryptBlob(blob, walletPassphrase(wallet))
-        out = dec.file
-        name = dec.name
+        try {
+          const dec = await decryptBlob(blob, pass)
+          out = dec.file
+          name = dec.name
+        } catch {
+          pendingDownload.current = obj
+          pendingUpload.current = null
+          setPassReason('retry')
+          setPassOpen(true)
+          return
+        }
       }
       const url = URL.createObjectURL(out)
       const a = document.createElement('a')
@@ -369,6 +417,29 @@ export default function Dashboard() {
     } finally {
       setBusy(false)
     }
+  }
+
+  async function handleDownload(obj: ApiObject) {
+    if (!wallet) return
+    const pass = resolveVaultPassphrase(wallet)
+    if (!pass && obj.encrypted) {
+      pendingDownload.current = obj
+      pendingUpload.current = null
+      setPassReason('unlock')
+      setPassOpen(true)
+      return
+    }
+    await runDownload(obj, pass || '')
+  }
+
+  function onPassphraseUnlocked(pass: string) {
+    setPassOpen(false)
+    const upload = pendingUpload.current
+    const download = pendingDownload.current
+    pendingUpload.current = null
+    pendingDownload.current = null
+    if (upload) void runUpload(upload.entries, upload.targetFolder, pass)
+    else if (download) void runDownload(download, pass)
   }
 
   async function handleDelete(hash: string) {
@@ -388,7 +459,7 @@ export default function Dashboard() {
   async function handleCreateApiKey() {
     setBusy(true)
     try {
-      const created = await createApiKey(keyName.trim() || 'server')
+      const created = await createApiKey(keyName.trim() || 'server', keyProjectId || undefined)
       setCreatedKeySecret(created.key)
       setApiKeys(await listApiKeys())
       setToast('API key created — copy it now; it won’t be shown again')
@@ -407,6 +478,38 @@ export default function Dashboard() {
       setToast('API key revoked')
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Revoke failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleCreateProject() {
+    setBusy(true)
+    try {
+      const maxBytes = projectMaxGb.trim()
+        ? Math.floor(Number(projectMaxGb) * 1024 * 1024 * 1024)
+        : null
+      await createProject({ name: projectName.trim() || 'app', maxBytes })
+      setProjects(await listProjects())
+      setProjectName('app')
+      setProjectMaxGb('')
+      setToast('Project pool created')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not create project')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleArchiveProject(id: string) {
+    setBusy(true)
+    try {
+      await archiveProject(id)
+      setProjects(await listProjects())
+      if (keyProjectId === id) setKeyProjectId('')
+      setToast('Project archived')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Archive failed')
     } finally {
       setBusy(false)
     }
@@ -1114,10 +1217,56 @@ export default function Dashboard() {
 
                 {authed && (
                   <div className="dash-detail-form" style={{ marginTop: '1.5rem' }}>
-                    <p className="dash-detail-label">Developer API keys</p>
+                    <p className="dash-detail-label">Project pools</p>
                     <p className="dash-detail-copy">
-                      For server agents. Keys inherit this wallet’s quota. Manage only from a wallet session — see{' '}
-                      <Link to="/docs#sdk">SDK docs</Link>.
+                      Soft caps inside this wallet’s quota. Bind API keys to a project to meter app usage — see{' '}
+                      <Link to="/docs#projects">docs</Link>.
+                    </p>
+                    <label>
+                      Project name
+                      <input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
+                    </label>
+                    <label>
+                      Soft cap (GB, optional)
+                      <input
+                        value={projectMaxGb}
+                        onChange={(e) => setProjectMaxGb(e.target.value)}
+                        placeholder="e.g. 2"
+                        inputMode="decimal"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="dash-btn ghost"
+                      disabled={busy}
+                      onClick={() => void handleCreateProject()}
+                    >
+                      Create project
+                    </button>
+                    {projects.length > 0 && (
+                      <ul className="dash-detail-list">
+                        {projects.map((p) => (
+                          <li key={p.id}>
+                            {p.name} · {formatBytes(p.usedBytes)}
+                            {p.maxBytes != null ? ` / ${formatBytes(p.maxBytes)}` : ''}{' '}
+                            <button
+                              type="button"
+                              className="dash-hash-link"
+                              disabled={busy}
+                              onClick={() => void handleArchiveProject(p.id)}
+                            >
+                              Archive
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <p className="dash-detail-label" style={{ marginTop: '1.25rem' }}>
+                      Developer API keys
+                    </p>
+                    <p className="dash-detail-copy">
+                      For server agents. Optional project binding enforces the pool cap.
                     </p>
                     {createdKeySecret && (
                       <label>
@@ -1128,6 +1277,17 @@ export default function Dashboard() {
                     <label>
                       Key name
                       <input value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="server" />
+                    </label>
+                    <label>
+                      Project
+                      <select value={keyProjectId} onChange={(e) => setKeyProjectId(e.target.value)}>
+                        <option value="">Wallet pool (no project)</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <button
                       type="button"
@@ -1141,7 +1301,8 @@ export default function Dashboard() {
                       <ul className="dash-detail-list">
                         {apiKeys.map((k) => (
                           <li key={k.id}>
-                            <code>{k.prefix}…</code> · {k.name}{' '}
+                            <code>{k.prefix}…</code> · {k.name}
+                            {k.projectId ? ` · project ${k.projectId.slice(0, 6)}` : ''}{' '}
                             <button
                               type="button"
                               className="dash-hash-link"
@@ -1218,6 +1379,20 @@ export default function Dashboard() {
         }}
         showToast={setToast}
       />
+
+      {wallet && (
+        <PassphraseModal
+          open={passOpen}
+          address={wallet}
+          reason={passReason}
+          onClose={() => {
+            setPassOpen(false)
+            pendingUpload.current = null
+            pendingDownload.current = null
+          }}
+          onUnlocked={onPassphraseUnlocked}
+        />
+      )}
 
       {toast && (
         <div className="dash-toast" role="status">

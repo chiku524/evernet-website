@@ -34,6 +34,8 @@ export type StoredObjectMeta = {
   blobRef: string
   /** Stellar/Soroban tx hash from register_object */
   registrationTx?: string
+  /** Optional project billing pool that funded this upload. */
+  projectId?: string
 }
 
 type VaultLedger = {

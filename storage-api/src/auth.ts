@@ -17,6 +17,7 @@ export type AuthedRequest = Request & {
   authType?: 'jwt' | 'api_key'
   apiKeyId?: string
   apiKeyName?: string
+  projectId?: string
 }
 
 const CHALLENGE_TTL_SECONDS = 300
@@ -83,6 +84,7 @@ export function requireWallet(req: AuthedRequest, res: Response, next: NextFunct
         req.authType = 'api_key'
         req.apiKeyId = resolved.keyId
         req.apiKeyName = resolved.keyName
+        req.projectId = resolved.projectId
         if (!rateLimitAuthed(req, res)) return
         next()
       })

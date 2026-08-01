@@ -199,6 +199,36 @@ export const openApiSpec = {
         responses: { '200': { description: '{ ok }' } },
       },
     },
+    '/projects': {
+      get: {
+        tags: ['Keys'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List project billing pools (wallet JWT)',
+        responses: { '200': { description: '{ projects }' } },
+      },
+      post: {
+        tags: ['Keys'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Create project pool with optional maxBytes soft cap',
+        responses: { '201': { description: 'Project' } },
+      },
+    },
+    '/projects/{id}': {
+      patch: {
+        tags: ['Keys'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Update project name or soft cap',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Project' } },
+      },
+      delete: {
+        tags: ['Keys'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Archive project',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: '{ ok }' } },
+      },
+    },
     '/objects': {
       get: {
         tags: ['Objects'],

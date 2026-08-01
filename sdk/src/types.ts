@@ -39,6 +39,7 @@ export type ApiKeyInfo = {
   id: string
   name: string
   prefix: string
+  projectId?: string
   createdAt: number
   lastUsedAt?: number
   revokedAt?: number
@@ -51,8 +52,24 @@ export type CreatedApiKey = ApiKeyInfo & {
 
 export type UsageInfo = {
   profile: EvernetProfile
-  auth: { type: 'jwt' | 'api_key'; keyId?: string; keyName?: string }
+  auth: { type: 'jwt' | 'api_key'; keyId?: string; keyName?: string; projectId?: string }
+  project?: {
+    id: string
+    name: string
+    maxBytes: number | null
+    usedBytes: number
+    remainingBytes: number | null
+  } | null
   limits: { requestsPerMinute: number }
+}
+
+export type EvernetProject = {
+  id: string
+  name: string
+  maxBytes: number | null
+  usedBytes: number
+  createdAt: number
+  remainingBytes: number | null
 }
 
 export type EncryptedPayload = {
