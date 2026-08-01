@@ -24,6 +24,11 @@ npm run build
 npm run preview
 ```
 
+## Routes
+
+- `/` — marketing site from the business strategy document
+- `/dashboard` — browser-based storage vault demo (IndexedDB): upload, folders, star, trash, download
+
 ## Content
 
 Sections cover problem/market need, product overview, go-to-market strategy, Stellar alignment, technical integration plan, roadmap milestones, and grant fund allocation.
