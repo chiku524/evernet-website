@@ -260,7 +260,8 @@ export default function Pitch() {
           </div>
           <p className="pitch-note">
             Free tier anchors activation (5 GB). Paid leases extend quota on-chain after Horizon settlement.
-            Future upside: custom Stellar assets, developer API metering, node incentives, and enterprise SLA tiers.
+            Live developer HTTP API (OpenAPI + docs) today; future upside includes API-key metering, node incentives,
+            and enterprise SLA tiers.
           </p>
         </Section>
 

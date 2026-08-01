@@ -20,6 +20,8 @@ import {
   registerObjectOnChain,
 } from './soroban.js'
 import { normalizeFolderPath } from './paths.js'
+import { openApiSpec } from './openapi.js'
+import { publicObject, publicObjects } from './publicMeta.js'
 import {
   createFolder,
   deleteFolder,
@@ -35,6 +37,8 @@ import {
   writeBlob,
   type StoredObjectMeta,
 } from './store.js'
+
+const API_VERSION = '1'
 
 const explicitOrigins = config.corsOrigin
   .split(',')
@@ -78,14 +82,31 @@ const upload = multer({
 app.disable('etag')
 app.use((_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, max-age=0')
+  res.setHeader('X-Evernet-Api-Version', API_VERSION)
   next()
 })
 app.use(cors({ origin: allowedOrigin }))
 app.use(express.json({ limit: '2mb' }))
 
+app.get('/', (_req, res) => {
+  res.json({
+    name: 'Evernet Storage API',
+    version: API_VERSION,
+    docs: 'https://evernet.tech/docs#api',
+    openapi: '/openapi.json',
+    health: '/health',
+    config: '/config/public',
+  })
+})
+
+app.get('/openapi.json', (_req, res) => {
+  res.json(openApiSpec)
+})
+
 app.get('/health', (_req, res) => {
   res.json({
     ok: true,
+    version: API_VERSION,
     network: config.network,
     onChain: onChainEnabled(),
     contractId: config.contractId || null,
@@ -130,7 +151,7 @@ app.get('/objects', requireWallet, async (req: AuthedRequest, res) => {
       listObjects(req.wallet!),
       listFolders(req.wallet!),
     ])
-    res.json({ objects, folders })
+    res.json({ objects: publicObjects(objects), folders })
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'List failed' })
   }
@@ -259,7 +280,11 @@ app.post('/objects', requireWallet, upload.single('file'), async (req: AuthedReq
       ? ((await patchObjectMeta(owner, hash, { registrationTx })) ?? { ...meta, registrationTx })
       : meta
 
-    res.status(201).json({ object, profile: updated, folders: await listFolders(owner) })
+    res.status(201).json({
+      object: publicObject(object),
+      profile: updated,
+      folders: await listFolders(owner),
+    })
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Upload failed' })
   }
@@ -280,7 +305,7 @@ app.patch('/objects/:hash', requireWallet, async (req: AuthedRequest, res) => {
       res.status(404).json({ error: 'Not found' })
       return
     }
-    res.json({ object, folders: await listFolders(req.wallet!) })
+    res.json({ object: publicObject(object), folders: await listFolders(req.wallet!) })
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Update failed' })
   }

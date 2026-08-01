@@ -14,9 +14,16 @@ const toc = [
   { id: 'plans', label: 'Storage plans' },
   { id: 'how', label: 'How it works' },
   { id: 'security', label: 'Security' },
+  { id: 'api', label: 'Developer API' },
+  { id: 'api-auth', label: 'API authentication' },
+  { id: 'api-reference', label: 'API reference' },
+  { id: 'api-examples', label: 'API examples' },
+  { id: 'api-cors', label: 'CORS & access' },
   { id: 'faq', label: 'FAQ' },
   { id: 'links', label: 'Links & contracts' },
 ]
+
+const API_BASE = 'https://evernet-storage-api.vercel.app'
 
 export default function Docs() {
   return (
@@ -28,8 +35,8 @@ export default function Docs() {
           </Link>
           <nav className="docs-top-nav" aria-label="Site">
             <Link to="/docs">Docs</Link>
+            <a href="#api">API</a>
             <Link to="/dashboard">Vault</Link>
-            <a href="#wallet">Wallets</a>
             <Link className="docs-top-cta" to="/dashboard">
               Open vault
             </Link>
@@ -51,9 +58,10 @@ export default function Docs() {
 
         <article className="docs-content">
           <p className="eyebrow">Documentation</p>
-          <h1>Evernet user guide</h1>
+          <h1>Evernet docs</h1>
           <p className="docs-lead">
-            Everything you need to connect a Stellar wallet, buy capacity with XLM, and store encrypted files on Evernet.
+            Connect a Stellar wallet, buy capacity with XLM, store encrypted files — and integrate the same storage
+            surface from your own apps via the public HTTP API.
           </p>
 
           <section id="overview">
@@ -284,6 +292,318 @@ export default function Docs() {
             </ul>
           </section>
 
+          <section id="api">
+            <h2>Developer API</h2>
+            <p>
+              Evernet exposes a REST API for wallet-linked object storage — the same surface the vault uses. Use it from
+              Stellar dApps, backends, or scripts when you need encrypted blobs with on-chain quota and content hashes,
+              not a general SQL database (that’s closer to D1/RDS) or a full AWS stack.
+            </p>
+            <div className="docs-grid">
+              <div>
+                <h3>Base URL</h3>
+                <p>
+                  <code>{API_BASE}</code>
+                </p>
+                <p>
+                  Machine-readable spec:{' '}
+                  <a href={`${API_BASE}/openapi.json`} target="_blank" rel="noreferrer">
+                    /openapi.json
+                  </a>
+                </p>
+              </div>
+              <div>
+                <h3>What it stores</h3>
+                <p>
+                  Opaque objects (prefer client-side ciphertext). Folders are path metadata on the API. Quota and object
+                  hashes register on Soroban when on-chain mode is enabled.
+                </p>
+              </div>
+            </div>
+            <p>
+              Responses include header <code>X-Evernet-Api-Version: 1</code>. Internal blob locators are never returned
+              to clients.
+            </p>
+          </section>
+
+          <section id="api-auth">
+            <h2>API authentication</h2>
+            <p>
+              Auth is wallet-native (SEP-10 style). There are no API keys in v1 — the caller proves control of a Stellar{' '}
+              <code>G…</code> address, then uses a short-lived JWT.
+            </p>
+            <ol className="docs-steps">
+              <li>
+                <code>POST /auth/challenge</code> with <code>{`{ "address": "G…" }`}</code> → receive challenge XDR +
+                network passphrase.
+              </li>
+              <li>
+                Sign the XDR with the user’s wallet (<strong>do not submit</strong> — sequence 0, never funds-moving).
+              </li>
+              <li>
+                <code>POST /auth/verify</code> with <code>{`{ "address", "signedTransaction" }`}</code> →{' '}
+                <code>{`{ "token", "address" }`}</code>.
+              </li>
+              <li>
+                Send <code>Authorization: Bearer &lt;token&gt;</code> on subsequent requests (tokens expire ~24h).
+              </li>
+            </ol>
+            <p>
+              Server-side integrations typically collect the signature in the browser (or a wallet SDK), then call the
+              API from your backend with the JWT.
+            </p>
+          </section>
+
+          <section id="api-reference">
+            <h2>API reference</h2>
+            <div className="docs-table-wrap">
+              <table className="docs-table">
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <code>GET</code>
+                    </td>
+                    <td>
+                      <code>/</code>
+                    </td>
+                    <td>—</td>
+                    <td>API index + doc links</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>GET</code>
+                    </td>
+                    <td>
+                      <code>/health</code>
+                    </td>
+                    <td>—</td>
+                    <td>Liveness, network, storage driver</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>GET</code>
+                    </td>
+                    <td>
+                      <code>/openapi.json</code>
+                    </td>
+                    <td>—</td>
+                    <td>OpenAPI 3 document</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>GET</code>
+                    </td>
+                    <td>
+                      <code>/config/public</code>
+                    </td>
+                    <td>—</td>
+                    <td>Treasury, contract, plan catalog</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>POST</code>
+                    </td>
+                    <td>
+                      <code>/auth/challenge</code>
+                    </td>
+                    <td>—</td>
+                    <td>Start wallet login</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>POST</code>
+                    </td>
+                    <td>
+                      <code>/auth/verify</code>
+                    </td>
+                    <td>—</td>
+                    <td>Exchange signed XDR for JWT</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>GET</code>
+                    </td>
+                    <td>
+                      <code>/profile</code>
+                    </td>
+                    <td>Bearer</td>
+                    <td>Quota, used, lease, object count</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>GET</code>
+                    </td>
+                    <td>
+                      <code>/objects</code>
+                    </td>
+                    <td>Bearer</td>
+                    <td>
+                      <code>{`{ objects, folders }`}</code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>POST</code>
+                    </td>
+                    <td>
+                      <code>/objects</code>
+                    </td>
+                    <td>Bearer</td>
+                    <td>Multipart upload · max 80&nbsp;MB · 402 if over quota</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>GET</code>
+                    </td>
+                    <td>
+                      <code>/objects/:hash</code>
+                    </td>
+                    <td>Bearer</td>
+                    <td>
+                      Binary body · <code>X-Object-Name</code>, <code>X-Object-Mime</code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>PATCH</code>
+                    </td>
+                    <td>
+                      <code>/objects/:hash</code>
+                    </td>
+                    <td>Bearer</td>
+                    <td>
+                      JSON <code>name</code> / <code>folder</code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>DELETE</code>
+                    </td>
+                    <td>
+                      <code>/objects/:hash</code>
+                    </td>
+                    <td>Bearer</td>
+                    <td>Removes blob + on-chain registration</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>GET/POST/PATCH/DELETE</code>
+                    </td>
+                    <td>
+                      <code>/folders</code>
+                    </td>
+                    <td>Bearer</td>
+                    <td>Create, rename, delete folder paths</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>POST</code>
+                    </td>
+                    <td>
+                      <code>/purchases/confirm</code>
+                    </td>
+                    <td>Bearer</td>
+                    <td>
+                      <code>{`{ planId, txHash }`}</code> after XLM payment
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              Full field schemas live in{' '}
+              <a href={`${API_BASE}/openapi.json`} target="_blank" rel="noreferrer">
+                OpenAPI
+              </a>
+              . Errors are JSON <code>{`{ "error": "…" }`}</code>.
+            </p>
+          </section>
+
+          <section id="api-examples">
+            <h2>API examples</h2>
+            <h3>Discover plans</h3>
+            <pre className="docs-code">
+              <code>{`curl -s ${API_BASE}/config/public | jq .plans`}</code>
+            </pre>
+            <h3>Upload (after you have a JWT)</h3>
+            <pre className="docs-code">
+              <code>{`curl -X POST ${API_BASE}/objects \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -F "file=@ciphertext.bin" \\
+  -F "name=notes.bin" \\
+  -F "folder=docs" \\
+  -F "encrypted=true"`}</code>
+            </pre>
+            <h3>TypeScript (fetch)</h3>
+            <pre className="docs-code">
+              <code>{`const base = '${API_BASE}'
+
+async function listVault(token: string) {
+  const res = await fetch(\`\${base}/objects\`, {
+    headers: { Authorization: \`Bearer \${token}\` },
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json() as Promise<{ objects: unknown[]; folders: string[] }>
+}
+
+async function upload(token: string, bytes: Blob, name: string, folder = '') {
+  const body = new FormData()
+  body.append('file', bytes, name)
+  body.append('name', name)
+  body.append('folder', folder)
+  body.append('encrypted', 'true')
+  const res = await fetch(\`\${base}/objects\`, {
+    method: 'POST',
+    headers: { Authorization: \`Bearer \${token}\` },
+    body,
+  })
+  if (!res.ok) throw new Error((await res.json()).error)
+  return res.json()
+}`}</code>
+            </pre>
+            <p>
+              Challenge signing needs a Stellar wallet SDK (see the vault’s{' '}
+              <a href="https://stellarwalletskit.dev/" target="_blank" rel="noreferrer">
+                Stellar Wallets Kit
+              </a>{' '}
+              integration). Prefer encrypting bytes in the client before <code>POST /objects</code>.
+            </p>
+            <p>
+              End-to-end smoke (throwaway keypair):{' '}
+              <code>cd storage-api && npx tsx src/scripts/smoke-auth.ts {API_BASE}</code>
+            </p>
+          </section>
+
+          <section id="api-cors">
+            <h2>CORS & access</h2>
+            <p>
+              Browser calls from <code>evernet.tech</code>, <code>*.evernet.tech</code>, Vercel preview hosts, and{' '}
+              <code>localhost</code> are allowed. Other website origins are blocked by CORS.
+            </p>
+            <ul>
+              <li>
+                <strong>Recommended for third-party apps:</strong> call the API from your backend (no CORS), after the
+                user signs a challenge in your frontend.
+              </li>
+              <li>
+                <strong>First-party browser apps:</strong> request an origin allowlist if you need direct browser access
+                from another domain.
+              </li>
+              <li>
+                <strong>Roadmap:</strong> project API keys / metering for server agents that shouldn’t hold a user wallet
+                session.
+              </li>
+            </ul>
+          </section>
+
           <section id="faq">
             <h2>FAQ</h2>
             <dl className="docs-faq">
@@ -325,6 +645,14 @@ export default function Docs() {
                   treasury are configured for Public Network. Full decentralized node mesh remains on the roadmap.
                 </dd>
               </div>
+              <div>
+                <dt>Can my app use Evernet like S3?</dt>
+                <dd>
+                  For encrypted object storage tied to a Stellar wallet — yes, via the{' '}
+                  <a href="#api">Developer API</a>. It is not a SQL database or a drop-in AWS SDK. Auth is wallet JWT
+                  today; API keys are on the roadmap.
+                </dd>
+              </div>
             </dl>
           </section>
 
@@ -333,6 +661,15 @@ export default function Docs() {
             <ul className="docs-links">
               <li>
                 Vault: <Link to="/dashboard">/dashboard</Link>
+              </li>
+              <li>
+                Developer API: <a href="#api">/docs#api</a>
+              </li>
+              <li>
+                OpenAPI:{' '}
+                <a href={`${API_BASE}/openapi.json`} target="_blank" rel="noreferrer">
+                  {API_BASE}/openapi.json
+                </a>
               </li>
               <li>
                 Wallet support:{' '}

@@ -2,7 +2,20 @@
 
 Decentralized, wallet-linked storage for Stellar — marketing site + vault dashboard + Soroban control plane + storage API.
 
-Live: [evernet.tech](https://evernet.tech) · API: [evernet-storage-api.vercel.app](https://evernet-storage-api.vercel.app)
+Live: [evernet.tech](https://evernet.tech) · API: [evernet-storage-api.vercel.app](https://evernet-storage-api.vercel.app) · Docs: [evernet.tech/docs#api](https://evernet.tech/docs#api)
+
+## Developer API
+
+Public HTTP API for wallet-linked encrypted object storage (same surface as the vault):
+
+| Resource | URL |
+|----------|-----|
+| Base | `https://evernet-storage-api.vercel.app` |
+| OpenAPI | [`/openapi.json`](https://evernet-storage-api.vercel.app/openapi.json) |
+| Human docs | [evernet.tech/docs#api](https://evernet.tech/docs#api) |
+| Health | [`/health`](https://evernet-storage-api.vercel.app/health) |
+
+Auth: SEP-10 style challenge → JWT Bearer. Prefer server-side calls from third-party apps (browser CORS is limited to Evernet / localhost / Vercel previews). Encrypt client-side before `POST /objects`.
 
 ## Architecture
 
