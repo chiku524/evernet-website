@@ -341,6 +341,87 @@ export class EvernetClient {
     return this.json<{ ok: boolean }>(`/s3/v1/multipart/${uploadId}`, { method: 'DELETE' })
   }
 
+  async s3Head(key: string): Promise<{
+    hash: string
+    key: string
+    size: number
+    mimeType: string
+    encrypted: boolean
+  }> {
+    const res = await this.raw(`/s3/v1/object?key=${encodeURIComponent(key)}`, {
+      method: 'HEAD',
+      headers: this.authHeaders(),
+    })
+    if (!res.ok) {
+      throw new EvernetError(`S3 head failed (${res.status})`, { status: res.status })
+    }
+    return {
+      hash: res.headers.get('X-Object-Hash') || '',
+      key: decodeURIComponent(res.headers.get('X-Object-Key') || key),
+      size: Number(res.headers.get('X-Object-Size') || 0),
+      mimeType: res.headers.get('Content-Type') || 'application/octet-stream',
+      encrypted: res.headers.get('X-Object-Encrypted') === 'true',
+    }
+  }
+
+  async s3Copy(fromKey: string, toKey: string) {
+    return this.json<{ key: string; object: EvernetObject; profile: EvernetProfile; copiedFrom: string }>(
+      '/s3/v1/copy',
+      { method: 'POST', body: JSON.stringify({ fromKey, toKey }) },
+    )
+  }
+
+  async s3CreateGrant(input: {
+    key?: string
+    hash?: string
+    expiresInSec?: number
+    /** Stellar G-address restricted to that wallet, or '*' / omit for anyone with the link. */
+    grantee?: string | null
+  }) {
+    return this.json<{
+      id: string
+      token: string
+      url: string
+      key: string
+      hash: string
+      expiresAt: number
+      grantee: string | null
+    }>('/s3/v1/grants', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  async s3ListGrants() {
+    const res = await this.json<{
+      grants: Array<{
+        id: string
+        key: string
+        hash: string
+        grantee: string | null
+        expiresAt: number
+        createdAt: number
+      }>
+    }>('/s3/v1/grants')
+    return res.grants
+  }
+
+  async s3RevokeGrant(id: string) {
+    return this.json<{ ok: boolean }>(`/s3/v1/grants/${id}`, { method: 'DELETE' })
+  }
+
+  /** Download via a share token (optionally with this client's Bearer if grantee-restricted). */
+  async s3GetShared(token: string): Promise<Blob> {
+    const res = await this.raw(`/s3/v1/shared/${encodeURIComponent(token)}`, {
+      headers: this.authHeaders(),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new EvernetError((body as { error?: string }).error || 'Shared get failed', {
+        status: res.status,
+        body,
+      })
+    }
+    return res.blob()
+  }
+
   /**
    * Upload large ciphertext via multipart (≤16MB/part, ≤64 parts).
    * Encrypt first yourself, or pass already-encrypted bytes.

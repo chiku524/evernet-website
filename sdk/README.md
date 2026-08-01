@@ -45,7 +45,11 @@ const plain = await client.downloadAndDecrypt(object.hash, passphrase)
 ```ts
 await client.s3Put('docs/report.bin', ciphertext, { encrypted: true })
 const listed = await client.s3List({ prefix: 'docs/', delimiter: '/' })
+await client.s3Head('docs/report.bin')
+await client.s3Copy('docs/report.bin', 'docs/report-copy.bin')
 const { url } = await client.s3Presign({ key: 'docs/report.bin', expiresInSec: 3600 })
+const grant = await client.s3CreateGrant({ key: 'docs/report.bin', expiresInSec: 7 * 86400 })
+// grant.url → revocable shared download (ciphertext)
 // large payloads:
 await client.s3MultipartPut('media/video.bin', bigCiphertext, { encrypted: true })
 ```

@@ -19,7 +19,7 @@ Auth: SEP-10 style challenge → JWT Bearer, or API keys (`evn_live_…`) for se
 
 **SDK:** [`sdk/`](sdk/) (`evernet-sdk` on npm) — vault helpers plus S3-shaped `s3Put` / `s3MultipartPut` / `s3Presign`.
 
-**Cloud surface:** [`/s3/v1`](https://evernet-storage-api.vercel.app/s3/v1) — key/prefix list, multipart (≤1 GB), ranged GET, presigned downloads.
+**Cloud surface:** [`/s3/v1`](https://evernet-storage-api.vercel.app/s3/v1) — key/prefix list, multipart (≤1 GB), ranged GET, HEAD/copy, presigned downloads, revocable share grants.
 
 ```bash
 npm run sdk:build

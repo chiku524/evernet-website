@@ -1,6 +1,12 @@
 import { Router, type Response } from 'express'
 import type { AuthedRequest } from './auth.js'
-import { requireWallet } from './auth.js'
+import { requireWallet, verifyToken } from './auth.js'
+import {
+  createShareGrant,
+  listShareGrants,
+  resolveShareToken,
+  revokeShareGrant,
+} from './grants.js'
 import { ingestObject } from './ingest.js'
 import {
   MULTIPART_MAX_PARTS,
@@ -61,10 +67,36 @@ function applyRange(buf: Buffer, rangeHeader: string | undefined): {
   }
 }
 
+function setObjectHeaders(
+  res: Response,
+  meta: NonNullable<Awaited<ReturnType<typeof getObject>>>,
+  opts?: { cacheMaxAge?: number },
+) {
+  res.setHeader('Content-Type', meta.mimeType || 'application/octet-stream')
+  res.setHeader('Accept-Ranges', 'bytes')
+  res.setHeader('ETag', `"${meta.hash}"`)
+  res.setHeader('X-Object-Hash', meta.hash)
+  res.setHeader('X-Object-Key', encodeURIComponent(objectKey(meta)))
+  res.setHeader('X-Object-Name', encodeURIComponent(meta.name))
+  res.setHeader('X-Object-Size', String(meta.size))
+  res.setHeader('X-Object-Encrypted', String(meta.encrypted))
+  const maxAge = opts?.cacheMaxAge
+  if (maxAge != null && maxAge > 0) {
+    res.setHeader('Cache-Control', `private, max-age=${maxAge}`)
+  } else {
+    res.setHeader('Cache-Control', 'private, no-store')
+  }
+  res.setHeader(
+    'Access-Control-Expose-Headers',
+    'ETag, X-Object-Hash, X-Object-Key, X-Object-Name, X-Object-Size, X-Object-Encrypted, Content-Range, Accept-Ranges',
+  )
+}
+
 async function sendObjectBytes(
   res: Response,
   meta: Awaited<ReturnType<typeof getObject>>,
   rangeHeader?: string,
+  opts?: { cacheMaxAge?: number },
 ) {
   if (!meta) {
     res.status(404).json({ error: 'Not found' })
@@ -77,17 +109,17 @@ async function sendObjectBytes(
   }
   const ranged = applyRange(blob, rangeHeader)
   res.status(ranged.status)
-  res.setHeader('Content-Type', meta.mimeType || 'application/octet-stream')
-  res.setHeader('Accept-Ranges', 'bytes')
-  res.setHeader('X-Object-Hash', meta.hash)
-  res.setHeader('X-Object-Key', encodeURIComponent(objectKey(meta)))
-  res.setHeader('X-Object-Name', encodeURIComponent(meta.name))
-  res.setHeader(
-    'Access-Control-Expose-Headers',
-    'X-Object-Hash, X-Object-Key, X-Object-Name, Content-Range, Accept-Ranges',
-  )
+  setObjectHeaders(res, meta, opts)
   if (ranged.contentRange) res.setHeader('Content-Range', ranged.contentRange)
   res.send(ranged.body)
+}
+
+function optionalBearerWallet(req: { headers: { authorization?: string } }): string | null {
+  const header = req.headers.authorization
+  if (!header?.startsWith('Bearer ')) return null
+  const token = header.slice(7).trim()
+  if (!token || token.startsWith('evn_')) return null
+  return verifyToken(token)
 }
 
 export const s3Router = Router()
@@ -96,9 +128,9 @@ export const s3Router = Router()
 s3Router.get('/', (_req, res) => {
   res.json({
     name: 'Evernet S3-shaped API',
-    version: '1',
+    version: '2',
     notes:
-      'JSON S3-shaped object API (not full AWS XML). Multipart up to 64×16MB. Presigned GET supported.',
+      'JSON S3-shaped object API (not full AWS XML). Multipart, ranged GET, HEAD/copy, presigned + revocable share grants.',
     maxSimplePutBytes: 80 * 1024 * 1024,
     maxPartBytes: MULTIPART_PART_MAX,
     maxParts: MULTIPART_MAX_PARTS,
@@ -106,6 +138,8 @@ s3Router.get('/', (_req, res) => {
       list: 'GET /s3/v1/objects?prefix=&delimiter=/',
       put: 'PUT /s3/v1/object?key=',
       get: 'GET /s3/v1/object?key= (Range supported)',
+      head: 'HEAD /s3/v1/object?key=',
+      copy: 'POST /s3/v1/copy',
       delete: 'DELETE /s3/v1/object?key=',
       multipartCreate: 'POST /s3/v1/multipart',
       multipartPart: 'PUT /s3/v1/multipart/:uploadId/:partNumber',
@@ -113,11 +147,13 @@ s3Router.get('/', (_req, res) => {
       multipartAbort: 'DELETE /s3/v1/multipart/:uploadId',
       presign: 'POST /s3/v1/presign',
       presignedGet: 'GET /s3/v1/presigned/:token',
+      grants: 'POST/GET /s3/v1/grants · DELETE /s3/v1/grants/:id',
+      sharedGet: 'GET /s3/v1/shared/:token',
     },
   })
 })
 
-/** Public presigned download — no wallet header. */
+/** Public/short-lived signed download — no wallet header. */
 s3Router.get('/presigned/:token', async (req, res) => {
   try {
     const payload = verifyPresignToken(String(req.params.token))
@@ -126,9 +162,33 @@ s3Router.get('/presigned/:token', async (req, res) => {
       return
     }
     const meta = await getObject(payload.sub, payload.hash)
-    await sendObjectBytes(res, meta, req.headers.range)
+    const remaining = Math.max(0, payload.exp - Math.floor(Date.now() / 1000))
+    await sendObjectBytes(res, meta, req.headers.range, {
+      cacheMaxAge: Math.min(300, remaining),
+    })
   } catch (err) {
     sendErr(res, err, 'Presigned download failed')
+  }
+})
+
+/** Revocable share link (optional grantee wallet restriction). */
+s3Router.get('/shared/:token', async (req, res) => {
+  try {
+    const caller = optionalBearerWallet(req)
+    const resolved = await resolveShareToken(String(req.params.token), caller)
+    if (!resolved) {
+      res.status(401).json({
+        error: 'Invalid, expired, revoked, or unauthorized share token',
+      })
+      return
+    }
+    const meta = await getObject(resolved.grant.owner, resolved.grant.hash)
+    const remaining = Math.max(0, Math.floor((resolved.grant.expiresAt - Date.now()) / 1000))
+    await sendObjectBytes(res, meta, req.headers.range, {
+      cacheMaxAge: Math.min(300, remaining),
+    })
+  } catch (err) {
+    sendErr(res, err, 'Shared download failed')
   }
 })
 
@@ -194,6 +254,121 @@ s3Router.get('/object', async (req: AuthedRequest, res) => {
     await sendObjectBytes(res, meta ?? null, req.headers.range)
   } catch (err) {
     sendErr(res, err, 'Get failed')
+  }
+})
+
+s3Router.head('/object', async (req: AuthedRequest, res) => {
+  try {
+    const key = String(req.query.key || '')
+    const meta = findByKey(await listObjects(req.wallet!), key)
+    if (!meta) {
+      res.status(404).end()
+      return
+    }
+    setObjectHeaders(res, meta)
+    res.status(200).end()
+  } catch {
+    res.status(400).end()
+  }
+})
+
+s3Router.post('/copy', async (req: AuthedRequest, res) => {
+  try {
+    const owner = req.wallet!
+    const fromKey = String(req.body?.fromKey || req.body?.source || '')
+    const toKey = String(req.body?.toKey || req.body?.destination || '')
+    const source = findByKey(await listObjects(owner), fromKey)
+    if (!source) {
+      res.status(404).json({ error: 'Source not found' })
+      return
+    }
+    const data = await readBlob(source)
+    if (!data) {
+      res.status(404).json({ error: 'Source blob missing' })
+      return
+    }
+    const { folder, name } = parseObjectKey(toKey)
+    const existing = findByKey(await listObjects(owner), toKey)
+    const result = await ingestObject({
+      owner,
+      data,
+      name,
+      folder,
+      mimeType: source.mimeType,
+      encrypted: source.encrypted,
+      projectId: req.projectId,
+      overwriteKey: true,
+      existingByKey: existing ?? null,
+    })
+    res.status(201).json({
+      key: objectKey(result.object),
+      object: publicObject(result.object),
+      profile: result.profile,
+      copiedFrom: fromKey,
+      folders: await listFolders(owner),
+    })
+  } catch (err) {
+    sendErr(res, err, 'Copy failed')
+  }
+})
+
+s3Router.post('/grants', async (req: AuthedRequest, res) => {
+  try {
+    if (req.authType === 'api_key') {
+      res.status(403).json({ error: 'Create share grants with a wallet session' })
+      return
+    }
+    const owner = req.wallet!
+    let meta = req.body?.hash ? await getObject(owner, String(req.body.hash)) : null
+    if (!meta && req.body?.key) {
+      meta = findByKey(await listObjects(owner), String(req.body.key)) ?? null
+    }
+    if (!meta) {
+      res.status(404).json({ error: 'Object not found' })
+      return
+    }
+    const created = await createShareGrant({
+      owner,
+      meta,
+      expiresInSec: Number(req.body?.expiresInSec) || undefined,
+      grantee: req.body?.grantee === undefined ? null : String(req.body.grantee),
+    })
+    const base = `${req.protocol}://${req.get('host')}`
+    res.status(201).json({
+      ...created,
+      url: `${base}${created.urlPath}`,
+    })
+  } catch (err) {
+    sendErr(res, err, 'Create grant failed')
+  }
+})
+
+s3Router.get('/grants', async (req: AuthedRequest, res) => {
+  try {
+    if (req.authType === 'api_key') {
+      res.status(403).json({ error: 'List share grants with a wallet session' })
+      return
+    }
+    res.json({ grants: await listShareGrants(req.wallet!) })
+  } catch (err) {
+    sendErr(res, err, 'List grants failed')
+  }
+})
+
+s3Router.delete('/grants/:id', async (req: AuthedRequest, res) => {
+  try {
+    if (req.authType === 'api_key') {
+      res.status(403).json({ error: 'Revoke share grants with a wallet session' })
+      return
+    }
+    const ok = await revokeShareGrant(req.wallet!, String(req.params.id))
+    if (!ok) {
+      res.status(404).json({ error: 'Grant not found' })
+      return
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    sendErr(res, err, 'Revoke grant failed')
   }
 })
 

@@ -13,6 +13,7 @@ import {
   createApiKey,
   createFolder,
   createProject,
+  createShareGrant,
   deleteFolder,
   deleteObject,
   downloadObject,
@@ -123,6 +124,7 @@ export default function Dashboard() {
   const [apiKeys, setApiKeys] = useState<ApiKeyInfo[]>([])
   const [projects, setProjects] = useState<ApiProject[]>([])
   const [createdKeySecret, setCreatedKeySecret] = useState<string | null>(null)
+  const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [keyName, setKeyName] = useState('server')
   const [keyProjectId, setKeyProjectId] = useState('')
   const [projectName, setProjectName] = useState('app')
@@ -510,6 +512,22 @@ export default function Dashboard() {
       setToast('Project archived')
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Archive failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleShareObject(obj: ApiObject) {
+    setBusy(true)
+    try {
+      const grant = await createShareGrant({
+        hash: obj.hash,
+        expiresInSec: 7 * 24 * 3600,
+      })
+      setShareUrl(grant.url)
+      setToast('Share link created — anyone with the URL can download ciphertext for 7 days')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not create share link')
     } finally {
       setBusy(false)
     }
@@ -926,9 +944,10 @@ export default function Dashboard() {
                           <tr
                             key={`folder:${row.path}`}
                             className={selectedFolder === row.path ? 'selected' : ''}
-                            onClick={() => {
+                              onClick={() => {
                               setSelectedFolder(row.path)
                               setSelected(null)
+                              setShareUrl(null)
                               setRenameValue(row.name)
                             }}
                             onDoubleClick={() => navigateTo(row.path)}
@@ -996,6 +1015,7 @@ export default function Dashboard() {
                           className={selected === item.hash ? 'selected' : ''}
                           onClick={() => {
                             setSelected(item.hash)
+                            setShareUrl(null)
                             setSelectedFolder(null)
                             setRenameValue(item.name)
                             setMoveTarget(item.folder || '')
@@ -1139,6 +1159,20 @@ export default function Dashboard() {
                   >
                     Move
                   </button>
+                  <button
+                    type="button"
+                    className="dash-btn ghost"
+                    disabled={busy}
+                    onClick={() => void handleShareObject(selectedObj)}
+                  >
+                    Create share link
+                  </button>
+                  {shareUrl && (
+                    <label>
+                      Share URL (ciphertext · 7 days)
+                      <input readOnly value={shareUrl} onFocus={(e) => e.target.select()} />
+                    </label>
+                  )}
                 </div>
               </>
             ) : selectedFolder ? (

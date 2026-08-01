@@ -282,3 +282,26 @@ export async function createProject(input: {
 export async function archiveProject(id: string): Promise<void> {
   await api(`/projects/${id}`, { method: 'DELETE' })
 }
+
+export type ShareGrantCreated = {
+  id: string
+  token: string
+  url: string
+  key: string
+  hash: string
+  expiresAt: number
+  grantee: string | null
+}
+
+export async function createShareGrant(input: {
+  key?: string
+  hash?: string
+  expiresInSec?: number
+  grantee?: string | null
+}): Promise<ShareGrantCreated> {
+  return api('/s3/v1/grants', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}

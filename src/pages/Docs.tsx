@@ -401,7 +401,7 @@ export default function Docs() {
             <p>
               Toward wallet-native cloud storage on Stellar, Evernet exposes a JSON <strong>S3-shaped</strong> surface
               under <code>/s3/v1</code> (not full AWS XML compatibility yet). Same vault, auth, quota, and encryption
-              model — with keys, multipart, ranged GET, and presigned downloads.
+              model — with keys, multipart, ranged GET, HEAD/copy, presigned downloads, and revocable share grants.
             </p>
             <div className="docs-table-wrap">
               <table className="docs-table">
@@ -430,12 +430,21 @@ export default function Docs() {
                     <td>Raw body · max 80&nbsp;MB · headers <code>X-Evernet-Mime</code>, <code>X-Evernet-Encrypted</code></td>
                   </tr>
                   <tr>
-                    <td>Get object</td>
+                    <td>Get / Head</td>
                     <td>
-                      <code>GET /s3/v1/object?key=…</code>
+                      <code>GET|HEAD /s3/v1/object?key=…</code>
                     </td>
                     <td>
-                      Supports <code>Range: bytes=…</code>
+                      GET supports <code>Range</code>; HEAD returns size/hash/ETag
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Copy</td>
+                    <td>
+                      <code>POST /s3/v1/copy</code>
+                    </td>
+                    <td>
+                      <code>{`{ fromKey, toKey }`}</code> within the same wallet
                     </td>
                   </tr>
                   <tr>
@@ -457,7 +466,14 @@ export default function Docs() {
                     <td>
                       <code>POST /s3/v1/presign</code> → <code>GET /s3/v1/presigned/:token</code>
                     </td>
-                    <td>Time-limited download without Bearer header</td>
+                    <td>Short-lived download URL (not revocable)</td>
+                  </tr>
+                  <tr>
+                    <td>Share grants</td>
+                    <td>
+                      <code>POST /s3/v1/grants</code> → <code>GET /s3/v1/shared/:token</code>
+                    </td>
+                    <td>Revocable; optional <code>grantee</code> G-address lock</td>
                   </tr>
                 </tbody>
               </table>
@@ -477,8 +493,9 @@ curl -X POST ${API_BASE}/s3/v1/presign \\
             </pre>
             <p>
               Probe: <a href={`${API_BASE}/s3/v1`} target="_blank" rel="noreferrer">{`${API_BASE}/s3/v1`}</a>. SDK
-              helpers: <code>s3Put</code>, <code>s3Get</code>, <code>s3List</code>, <code>s3MultipartPut</code>,{' '}
-              <code>s3Presign</code>.
+              helpers: <code>s3Put</code>, <code>s3Get</code>, <code>s3Head</code>, <code>s3Copy</code>,{' '}
+              <code>s3MultipartPut</code>, <code>s3Presign</code>, <code>s3CreateGrant</code>. Install{' '}
+              <code>evernet-sdk@0.3.0</code>+.
             </p>
           </section>
 
