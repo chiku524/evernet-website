@@ -19,13 +19,18 @@ import {
   onChainEnabled,
   registerObjectOnChain,
 } from './soroban.js'
+import { normalizeFolderPath } from './paths.js'
 import {
+  createFolder,
+  deleteFolder,
   deleteObjectLocal,
   getObject,
+  listFolders,
   listObjects,
   readBlob,
   registerObjectLocal,
   patchObjectMeta,
+  renameFolder,
   sha256Hex,
   writeBlob,
   type StoredObjectMeta,
@@ -121,9 +126,66 @@ app.get('/profile', requireWallet, async (req: AuthedRequest, res) => {
 
 app.get('/objects', requireWallet, async (req: AuthedRequest, res) => {
   try {
-    res.json({ objects: await listObjects(req.wallet!) })
+    const [objects, folders] = await Promise.all([
+      listObjects(req.wallet!),
+      listFolders(req.wallet!),
+    ])
+    res.json({ objects, folders })
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'List failed' })
+  }
+})
+
+app.get('/folders', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    res.json({ folders: await listFolders(req.wallet!) })
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'List folders failed' })
+  }
+})
+
+app.post('/folders', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    const path = normalizeFolderPath(req.body?.path)
+    if (!path) {
+      res.status(400).json({ error: 'Folder path required' })
+      return
+    }
+    const folders = await createFolder(req.wallet!, path)
+    res.status(201).json({ path, folders })
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Create folder failed' })
+  }
+})
+
+app.patch('/folders', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    const result = await renameFolder(
+      req.wallet!,
+      String(req.body?.from || ''),
+      String(req.body?.to || ''),
+    )
+    res.json(result)
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Rename folder failed' })
+  }
+})
+
+app.delete('/folders', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    const path = String(req.query.path || req.body?.path || '')
+    const recursive =
+      String(req.query.recursive || req.body?.recursive || 'false').toLowerCase() === 'true'
+    const result = await deleteFolder(req.wallet!, path, recursive)
+    // Best-effort on-chain cleanup for recursively deleted objects
+    await Promise.all(
+      result.deletedHashes.map((hash) =>
+        deleteObjectOnChain({ owner: req.wallet!, hashHex: hash }).catch(() => undefined),
+      ),
+    )
+    res.json({ ok: true, ...result })
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Delete folder failed' })
   }
 })
 
@@ -157,6 +219,7 @@ app.post('/objects', requireWallet, upload.single('file'), async (req: AuthedReq
     }
     const owner = req.wallet!
     const name = String(req.body?.name || req.file.originalname || 'file.bin')
+    const folder = normalizeFolderPath(req.body?.folder)
     const mimeType = String(req.body?.mimeType || req.file.mimetype || 'application/octet-stream')
     const encrypted = String(req.body?.encrypted || 'true') === 'true'
     const buf = req.file.buffer
@@ -182,6 +245,7 @@ app.post('/objects', requireWallet, upload.single('file'), async (req: AuthedReq
       hash,
       owner,
       name,
+      folder,
       mimeType,
       size: buf.length,
       encrypted,
@@ -195,9 +259,30 @@ app.post('/objects', requireWallet, upload.single('file'), async (req: AuthedReq
       ? ((await patchObjectMeta(owner, hash, { registrationTx })) ?? { ...meta, registrationTx })
       : meta
 
-    res.status(201).json({ object, profile: updated })
+    res.status(201).json({ object, profile: updated, folders: await listFolders(owner) })
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Upload failed' })
+  }
+})
+
+app.patch('/objects/:hash', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    const hash = String(req.params.hash)
+    const patch: Partial<StoredObjectMeta> = {}
+    if (req.body?.name !== undefined) patch.name = String(req.body.name)
+    if (req.body?.folder !== undefined) patch.folder = normalizeFolderPath(req.body.folder)
+    if (!Object.keys(patch).length) {
+      res.status(400).json({ error: 'Nothing to update' })
+      return
+    }
+    const object = await patchObjectMeta(req.wallet!, hash, patch)
+    if (!object) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    res.json({ object, folders: await listFolders(req.wallet!) })
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Update failed' })
   }
 })
 
@@ -206,7 +291,7 @@ app.delete('/objects/:hash', requireWallet, async (req: AuthedRequest, res) => {
     const hash = String(req.params.hash)
     const profile = await deleteObjectLocal(req.wallet!, hash)
     await deleteObjectOnChain({ owner: req.wallet!, hashHex: hash })
-    res.json({ ok: true, profile })
+    res.json({ ok: true, profile, folders: await listFolders(req.wallet!) })
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Delete failed' })
   }

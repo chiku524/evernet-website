@@ -6,18 +6,32 @@ import {
   type ApiProfile,
   apiBase,
   clearSession,
+  createFolder,
+  deleteFolder,
   deleteObject,
   downloadObject,
   fetchPublicConfig,
   getProfile,
   hasSession,
-  listObjects,
+  listVault,
   loginWithWallet,
+  renameFolder,
   sessionAddress,
+  updateObject,
   uploadObject,
 } from '../lib/api'
 import { decryptBlob, encryptFile, walletPassphrase } from '../lib/crypto'
 import { fileIconKind, formatBytes } from '../lib/format'
+import { filesFromDataTransfer } from '../lib/fs-drop'
+import {
+  breadcrumbs,
+  childFolders,
+  countUnderFolder,
+  joinFolder,
+  normalizeFolderPath,
+  objectsInFolder,
+  parentFolder,
+} from '../lib/paths'
 import {
   STORAGE_CONTRACT_ID,
   explorerContractUrl,
@@ -36,6 +50,18 @@ import {
 
 function Icon({ kind }: { kind: ReturnType<typeof fileIconKind> | 'folder' }) {
   const common = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true as const }
+  if (kind === 'folder') {
+    return (
+      <svg {...common}>
+        <path
+          d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4.2l1.5 1.8H19a1.5 1.5 0 0 1 1.5 1.5V18A1.5 1.5 0 0 1 19 19.5H5A1.5 1.5 0 0 1 3.5 18V7.5Z"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+      </svg>
+    )
+  }
   return (
     <svg {...common}>
       <path
@@ -57,35 +83,49 @@ function formatDate(ts: number): string {
   }).format(new Date(ts))
 }
 
+type FolderRow = { kind: 'folder'; name: string; path: string; count: number }
+type FileRow = { kind: 'file'; object: ApiObject }
+type Row = FolderRow | FileRow
+
 export default function Dashboard() {
   const [wallet, setWallet] = useState<string | null>(null)
   const [authed, setAuthed] = useState(false)
   const [profile, setProfile] = useState<ApiProfile | null>(null)
   const [objects, setObjects] = useState<ApiObject[]>([])
+  const [folders, setFolders] = useState<string[]>([])
+  const [currentFolder, setCurrentFolder] = useState('')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [buyOpen, setBuyOpen] = useState(false)
+  const [newFolderOpen, setNewFolderOpen] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [renameValue, setRenameValue] = useState('')
+  const [moveTarget, setMoveTarget] = useState('')
   const [network, setNetwork] = useState<StellarNetworkId>(() => loadPreferredNetwork())
   const [onChain, setOnChain] = useState(false)
   const [contractId, setContractId] = useState(STORAGE_CONTRACT_ID)
   const [apiOnline, setApiOnline] = useState<boolean | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
 
   const refresh = useCallback(async () => {
     if (!sessionAddress()) {
       setProfile(null)
       setObjects([])
+      setFolders([])
       setAuthed(false)
       return
     }
-    const [p, objs] = await Promise.all([getProfile(), listObjects()])
+    const [p, listing] = await Promise.all([getProfile(), listVault()])
     setProfile(p)
-    setObjects(objs)
+    setObjects(listing.objects)
+    setFolders(listing.folders)
     setAuthed(true)
   }, [])
 
@@ -117,7 +157,6 @@ export default function Dashboard() {
         }
       }
     })()
-    // Runs once on mount; the API response decides the live network.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh])
 
@@ -127,20 +166,57 @@ export default function Dashboard() {
     return () => window.clearTimeout(t)
   }, [toast])
 
-  const visible = useMemo(() => {
+  const crumbs = useMemo(() => breadcrumbs(currentFolder), [currentFolder])
+  const topFolders = useMemo(() => childFolders(folders, ''), [folders])
+  const searching = query.trim().length > 0
+
+  const rows = useMemo<Row[]>(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return objects
-    return objects.filter((o) => o.name.toLowerCase().includes(q) || o.hash.includes(q))
-  }, [objects, query])
+    if (q) {
+      return objects
+        .filter(
+          (o) =>
+            o.name.toLowerCase().includes(q) ||
+            o.hash.includes(q) ||
+            (o.folder || '').toLowerCase().includes(q),
+        )
+        .map((object) => ({ kind: 'file' as const, object }))
+    }
+
+    const folderRows: FolderRow[] = childFolders(folders, currentFolder).map((name) => {
+      const path = currentFolder ? `${currentFolder}/${name}` : name
+      return {
+        kind: 'folder',
+        name,
+        path,
+        count: countUnderFolder(objects, path),
+      }
+    })
+    const fileRows: FileRow[] = objectsInFolder(objects, currentFolder).map((object) => ({
+      kind: 'file',
+      object,
+    }))
+    return [
+      ...folderRows.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+      ...fileRows.sort((a, b) => a.object.name.localeCompare(b.object.name, undefined, { sensitivity: 'base' })),
+    ]
+  }, [objects, folders, currentFolder, query])
 
   const selectedObj = objects.find((o) => o.hash === selected) ?? null
   const usage = profile?.usedBytes ?? 0
   const quota = profile?.quotaBytes ?? 0
   const usagePct = quota > 0 ? Math.min(100, (usage / quota) * 100) : 0
+  const moveOptions = useMemo(() => ['', ...folders], [folders])
+
+  function navigateTo(path: string) {
+    setCurrentFolder(normalizeFolderPath(path))
+    setSelected(null)
+    setSelectedFolder(null)
+    setQuery('')
+  }
 
   function hashExplorerHref(obj: ApiObject): string {
     if (obj.registrationTx) return explorerTxUrl(obj.registrationTx, network)
-    // Legacy uploads without a stored registration tx — open the contract on Testnet explorer
     return explorerContractUrl(contractId, network)
   }
 
@@ -195,28 +271,48 @@ export default function Dashboard() {
     setAuthed(false)
     setProfile(null)
     setObjects([])
+    setFolders([])
     setSelected(null)
+    setSelectedFolder(null)
+    setCurrentFolder('')
     setToast('Disconnected — vault hidden')
   }
 
-  async function handleUpload(fileList: FileList | File[]) {
+  async function handleUpload(
+    fileList: Array<{ file: File; relativeFolder?: string }> | FileList | File[],
+  ) {
     if (!authed || !wallet) {
       setToast('Connect a Stellar wallet to upload')
       return
     }
+    const entries = Array.isArray(fileList)
+      ? fileList.map((f) => ('file' in f ? f : { file: f as File, relativeFolder: '' }))
+      : Array.from(fileList).map((file) => ({ file, relativeFolder: '' }))
+
     setBusy(true)
     try {
       const pass = walletPassphrase(wallet)
-      for (const file of Array.from(fileList)) {
-        const { ciphertext, header } = await encryptFile(file, pass)
+      let uploaded = 0
+      for (const entry of entries) {
+        const relative = normalizeFolderPath(entry.relativeFolder || '')
+        const folder = relative
+          ? normalizeFolderPath(currentFolder ? `${currentFolder}/${relative}` : relative)
+          : currentFolder
+        const { ciphertext, header } = await encryptFile(entry.file, pass)
         await uploadObject(ciphertext, {
           name: header.name,
           mimeType: 'application/octet-stream',
           encrypted: true,
+          folder,
         })
+        uploaded += 1
       }
       await refresh()
-      setToast(`Uploaded ${fileList.length} encrypted object(s)`)
+      setToast(
+        uploaded === 1
+          ? `Uploaded into ${currentFolder || 'Vault'}`
+          : `Uploaded ${uploaded} encrypted files`,
+      )
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Upload failed')
     } finally {
@@ -263,6 +359,100 @@ export default function Dashboard() {
     }
   }
 
+  async function handleCreateFolder() {
+    setBusy(true)
+    try {
+      const path = joinFolder(currentFolder, newFolderName)
+      const next = await createFolder(path)
+      setFolders(next)
+      setNewFolderOpen(false)
+      setNewFolderName('')
+      setToast(`Created ${path}`)
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not create folder')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRenameFolder(path: string) {
+    const name = renameValue.trim()
+    if (!name) return
+    setBusy(true)
+    try {
+      const to = joinFolder(parentFolder(path), name)
+      const result = await renameFolder(path, to)
+      setFolders(result.folders)
+      if (currentFolder === path || currentFolder.startsWith(`${path}/`)) {
+        setCurrentFolder(
+          currentFolder === path ? to : `${to}${currentFolder.slice(path.length)}`,
+        )
+      }
+      setSelectedFolder(to)
+      setRenameValue('')
+      await refresh()
+      setToast(result.moved ? `Renamed · ${result.moved} items updated` : 'Folder renamed')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Rename failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDeleteFolder(path: string, recursive: boolean) {
+    const label = path.split('/').pop() || path
+    const count = countUnderFolder(objects, path)
+    const ok = window.confirm(
+      recursive || count === 0
+        ? `Delete folder “${label}”${count ? ` and its ${count} file(s)` : ''}?`
+        : `Folder “${label}” still has ${count} file(s). Delete the folder and everything inside?`,
+    )
+    if (!ok) return
+    setBusy(true)
+    try {
+      const result = await deleteFolder(path, recursive || count > 0)
+      setFolders(result.folders)
+      if (currentFolder === path || currentFolder.startsWith(`${path}/`)) {
+        navigateTo(parentFolder(path))
+      }
+      setSelectedFolder(null)
+      await refresh()
+      setToast('Folder deleted')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Delete folder failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleMoveObject(hash: string, folder: string) {
+    setBusy(true)
+    try {
+      const result = await updateObject(hash, { folder: normalizeFolderPath(folder) })
+      setFolders(result.folders)
+      await refresh()
+      setToast(folder ? `Moved to ${folder}` : 'Moved to Vault root')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Move failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRenameObject(hash: string, name: string) {
+    if (!name.trim()) return
+    setBusy(true)
+    try {
+      await updateObject(hash, { name: name.trim() })
+      await refresh()
+      setToast('Renamed')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Rename failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="dash" onClick={() => setMenuOpen(false)}>
       <aside className={`dash-sidebar ${menuOpen ? 'open' : ''}`} onClick={(e) => e.stopPropagation()}>
@@ -271,8 +461,12 @@ export default function Dashboard() {
         </Link>
         <p className="dash-side-label">Wallet vault</p>
         <nav className="dash-nav" aria-label="Vault">
-          <button type="button" className="dash-nav-btn active">
-            My objects
+          <button
+            type="button"
+            className={`dash-nav-btn ${currentFolder === '' && !searching ? 'active' : ''}`}
+            onClick={() => navigateTo('')}
+          >
+            All files
           </button>
           <button type="button" className="dash-nav-btn" onClick={() => setBuyOpen(true)}>
             Buy storage
@@ -281,6 +475,31 @@ export default function Dashboard() {
             Docs
           </Link>
         </nav>
+
+        {authed && topFolders.length > 0 && (
+          <div className="dash-folder-tree">
+            <p className="dash-side-label">Folders</p>
+            <ul>
+              {topFolders.map((name) => {
+                const path = name
+                const active =
+                  currentFolder === path || currentFolder.startsWith(`${path}/`)
+                return (
+                  <li key={path}>
+                    <button
+                      type="button"
+                      className={`dash-folder-link ${active ? 'active' : ''}`}
+                      onClick={() => navigateTo(path)}
+                    >
+                      <Icon kind="folder" />
+                      <span>{name}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
 
         <div className="dash-quota">
           <div className="dash-quota-top">
@@ -337,10 +556,26 @@ export default function Dashboard() {
           >
             Menu
           </button>
-          <div className="dash-crumbs">
-            <span className="dash-crumb current">
-              {wallet ? `Vault · ${shortenAddress(wallet)}` : 'Connect a wallet to open your vault'}
-            </span>
+          <div className="dash-crumbs" aria-label="Breadcrumb">
+            {authed ? (
+              crumbs.map((crumb, i) => {
+                const last = i === crumbs.length - 1
+                return (
+                  <span key={`${crumb.path}-${i}`} className="dash-crumb-wrap">
+                    {i > 0 && <span className="dash-crumb-sep">/</span>}
+                    {last ? (
+                      <span className="dash-crumb current">{crumb.label}</span>
+                    ) : (
+                      <button type="button" className="dash-crumb" onClick={() => navigateTo(crumb.path)}>
+                        {crumb.label}
+                      </button>
+                    )}
+                  </span>
+                )
+              })
+            ) : (
+              <span className="dash-crumb current">Connect a wallet to open your vault</span>
+            )}
           </div>
           <div className="dash-top-actions">
             {authed && (
@@ -349,7 +584,7 @@ export default function Dashboard() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search objects…"
+                  placeholder="Search vault…"
                   type="search"
                 />
               </label>
@@ -360,8 +595,25 @@ export default function Dashboard() {
               </button>
             ) : (
               <>
-                <button type="button" className="dash-btn ghost" onClick={() => setBuyOpen(true)}>
-                  Buy with XLM
+                <button
+                  type="button"
+                  className="dash-btn ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    setNewFolderName('')
+                    setNewFolderOpen(true)
+                  }}
+                >
+                  New folder
+                </button>
+                <button
+                  type="button"
+                  className="dash-btn ghost"
+                  disabled={busy}
+                  onClick={() => folderInputRef.current?.click()}
+                  title="Upload a folder from your computer"
+                >
+                  Upload folder
                 </button>
                 <button
                   type="button"
@@ -389,6 +641,24 @@ export default function Dashboard() {
                 e.target.value = ''
               }}
             />
+            <input
+              ref={folderInputRef}
+              type="file"
+              multiple
+              hidden
+              {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+              onChange={(e) => {
+                if (!e.target.files) return
+                const entries = Array.from(e.target.files).map((file) => {
+                  const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
+                  const parts = rel.replace(/\\/g, '/').split('/')
+                  parts.pop()
+                  return { file, relativeFolder: parts.join('/') }
+                })
+                void handleUpload(entries)
+                e.target.value = ''
+              }}
+            />
           </div>
         </header>
 
@@ -412,7 +682,10 @@ export default function Dashboard() {
             e.preventDefault()
             dragDepth.current = 0
             setDragging(false)
-            if (e.dataTransfer.files?.length) void handleUpload(e.dataTransfer.files)
+            void (async () => {
+              const dropped = await filesFromDataTransfer(e.dataTransfer)
+              if (dropped.length) await handleUpload(dropped)
+            })()
           }}
         >
           <div className="dash-panel">
@@ -437,17 +710,36 @@ export default function Dashboard() {
                   </p>
                 )}
               </div>
-            ) : visible.length === 0 ? (
+            ) : rows.length === 0 ? (
               <div className="dash-empty">
-                <h2>{query ? 'No matches' : 'Drop files to encrypt & store'}</h2>
+                <h2>
+                  {searching
+                    ? 'No matches'
+                    : currentFolder
+                      ? 'This folder is empty'
+                      : 'Drop files or folders to encrypt & store'}
+                </h2>
                 <p>
-                  Objects are ciphertext-only on the Evernet node, keyed to {shortenAddress(wallet!)}. Same wallet on
-                  another browser sees the same vault.
+                  {searching
+                    ? 'Try another name, hash, or folder path.'
+                    : `Uploads land in ${currentFolder || 'Vault'}. Create folders to keep credentials, media, and archives apart.`}
                 </p>
-                {!query && (
-                  <button type="button" className="dash-btn primary" onClick={() => fileInputRef.current?.click()}>
-                    Upload files
-                  </button>
+                {!searching && (
+                  <div className="dash-empty-actions">
+                    <button type="button" className="dash-btn primary" onClick={() => fileInputRef.current?.click()}>
+                      Upload files
+                    </button>
+                    <button
+                      type="button"
+                      className="dash-btn ghost"
+                      onClick={() => {
+                        setNewFolderName('')
+                        setNewFolderOpen(true)
+                      }}
+                    >
+                      New folder
+                    </button>
+                  </div>
                 )}
               </div>
             ) : (
@@ -457,19 +749,101 @@ export default function Dashboard() {
                     <tr>
                       <th>Name</th>
                       <th>Size</th>
-                      <th>Shards</th>
+                      <th>{searching ? 'Location' : 'Shards'}</th>
                       <th>Modified</th>
                       <th aria-label="Actions" />
                     </tr>
                   </thead>
                   <tbody>
-                    {visible.map((item) => {
+                    {!searching && currentFolder !== '' && (
+                      <tr className="dash-up-row" onDoubleClick={() => navigateTo(parentFolder(currentFolder))}>
+                        <td colSpan={5}>
+                          <button
+                            type="button"
+                            className="dash-up-btn"
+                            onClick={() => navigateTo(parentFolder(currentFolder))}
+                          >
+                            ← Up to {parentFolder(currentFolder) || 'Vault'}
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                    {rows.map((row) => {
+                      if (row.kind === 'folder') {
+                        return (
+                          <tr
+                            key={`folder:${row.path}`}
+                            className={selectedFolder === row.path ? 'selected' : ''}
+                            onClick={() => {
+                              setSelectedFolder(row.path)
+                              setSelected(null)
+                              setRenameValue(row.name)
+                            }}
+                            onDoubleClick={() => navigateTo(row.path)}
+                            onDragOver={(e) => {
+                              if (e.dataTransfer.types.includes('text/evernet-hash')) {
+                                e.preventDefault()
+                                e.dataTransfer.dropEffect = 'move'
+                              }
+                            }}
+                            onDrop={(e) => {
+                              const hash = e.dataTransfer.getData('text/evernet-hash')
+                              if (!hash) return
+                              e.preventDefault()
+                              e.stopPropagation()
+                              void handleMoveObject(hash, row.path)
+                            }}
+                          >
+                            <td>
+                              <div className="dash-name">
+                                <span className="dash-file-icon kind-folder">
+                                  <Icon kind="folder" />
+                                </span>
+                                <span>
+                                  <strong>{row.name}</strong>
+                                  <small>
+                                    {row.count} item{row.count === 1 ? '' : 's'} · double-click to open
+                                  </small>
+                                </span>
+                              </div>
+                            </td>
+                            <td>—</td>
+                            <td>—</td>
+                            <td>—</td>
+                            <td className="dash-row-actions" onClick={(e) => e.stopPropagation()}>
+                              <button type="button" onClick={() => navigateTo(row.path)}>
+                                Open
+                              </button>
+                              <button
+                                type="button"
+                                className="danger"
+                                disabled={busy}
+                                onClick={() => void handleDeleteFolder(row.path, false)}
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      }
+
+                      const item = row.object
                       const iconKind = fileIconKind(item.mimeType, item.name)
                       return (
                         <tr
                           key={item.hash}
                           className={selected === item.hash ? 'selected' : ''}
-                          onClick={() => setSelected(item.hash)}
+                          onClick={() => {
+                            setSelected(item.hash)
+                            setSelectedFolder(null)
+                            setRenameValue(item.name)
+                            setMoveTarget(item.folder || '')
+                          }}
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/evernet-hash', item.hash)
+                            e.dataTransfer.effectAllowed = 'move'
+                          }}
+                          draggable
                         >
                           <td>
                             <div className="dash-name">
@@ -486,9 +860,14 @@ export default function Dashboard() {
                             </div>
                           </td>
                           <td>{formatBytes(item.size)}</td>
-                          <td>{item.shards}</td>
+                          <td>{searching ? item.folder || 'Vault' : item.shards}</td>
                           <td>{formatDate(item.createdAt)}</td>
                           <td className="dash-row-actions" onClick={(e) => e.stopPropagation()}>
+                            {searching && item.folder && (
+                              <button type="button" onClick={() => navigateTo(item.folder)}>
+                                Go to folder
+                              </button>
+                            )}
                             <button type="button" disabled={busy} onClick={() => void handleDownload(item)}>
                               Download
                             </button>
@@ -517,6 +896,18 @@ export default function Dashboard() {
                 <h2>{selectedObj.name}</h2>
                 <dl className="dash-meta">
                   <div>
+                    <dt>Location</dt>
+                    <dd>
+                      <button
+                        type="button"
+                        className="dash-hash-link"
+                        onClick={() => navigateTo(selectedObj.folder || '')}
+                      >
+                        {selectedObj.folder || 'Vault'}
+                      </button>
+                    </dd>
+                  </div>
+                  <div>
                     <dt>Content hash</dt>
                     <dd style={{ wordBreak: 'break-all', fontSize: '0.8rem' }}>
                       <HashLink obj={selectedObj}>{selectedObj.hash}</HashLink>
@@ -538,10 +929,6 @@ export default function Dashboard() {
                     </div>
                   )}
                   <div>
-                    <dt>Owner</dt>
-                    <dd>{shortenAddress(selectedObj.owner)}</dd>
-                  </div>
-                  <div>
                     <dt>Size</dt>
                     <dd>{formatBytes(selectedObj.size)}</dd>
                   </div>
@@ -550,19 +937,112 @@ export default function Dashboard() {
                     <dd>{selectedObj.encrypted ? 'AES-GCM · client-side' : 'Off'}</dd>
                   </div>
                 </dl>
+
+                <div className="dash-detail-form">
+                  <label>
+                    Rename
+                    <input
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void handleRenameObject(selectedObj.hash, renameValue)
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="dash-btn ghost"
+                    disabled={busy || !renameValue.trim() || renameValue.trim() === selectedObj.name}
+                    onClick={() => void handleRenameObject(selectedObj.hash, renameValue)}
+                  >
+                    Save name
+                  </button>
+                  <label>
+                    Move to
+                    <select value={moveTarget} onChange={(e) => setMoveTarget(e.target.value)}>
+                      <option value="">Vault</option>
+                      {moveOptions
+                        .filter(Boolean)
+                        .map((folder) => (
+                          <option key={folder} value={folder}>
+                            {folder}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="dash-btn primary"
+                    disabled={busy || normalizeFolderPath(moveTarget) === (selectedObj.folder || '')}
+                    onClick={() => void handleMoveObject(selectedObj.hash, moveTarget)}
+                  >
+                    Move
+                  </button>
+                </div>
+              </>
+            ) : selectedFolder ? (
+              <>
+                <p className="dash-detail-label">Folder</p>
+                <h2>{selectedFolder.split('/').pop()}</h2>
+                <dl className="dash-meta">
+                  <div>
+                    <dt>Path</dt>
+                    <dd>{selectedFolder}</dd>
+                  </div>
+                  <div>
+                    <dt>Items</dt>
+                    <dd>{countUnderFolder(objects, selectedFolder)}</dd>
+                  </div>
+                </dl>
+                <div className="dash-detail-form">
+                  <label>
+                    Rename folder
+                    <input
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void handleRenameFolder(selectedFolder)
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="dash-btn ghost"
+                    disabled={busy || !renameValue.trim()}
+                    onClick={() => void handleRenameFolder(selectedFolder)}
+                  >
+                    Save name
+                  </button>
+                  <button
+                    type="button"
+                    className="dash-btn primary"
+                    onClick={() => navigateTo(selectedFolder)}
+                  >
+                    Open folder
+                  </button>
+                  <button
+                    type="button"
+                    className="dash-btn ghost"
+                    disabled={busy}
+                    onClick={() => void handleDeleteFolder(selectedFolder, true)}
+                  >
+                    Delete folder
+                  </button>
+                </div>
               </>
             ) : (
               <>
                 <p className="dash-detail-label">Protocol</p>
-                <h2>Wallet-linked storage</h2>
+                <h2>{currentFolder ? currentFolder.split('/').pop() : 'Wallet-linked storage'}</h2>
                 <p className="dash-detail-copy">
-                  Quota and object registrations live on the Soroban <code>storage-market</code> contract. Encrypted
-                  bytes live on the Evernet storage API, authorized by a SEP-10 style challenge your wallet signs.
+                  {currentFolder
+                    ? `New uploads land in this folder. Drag files onto the panel, or use Upload folder to keep a local directory tree.`
+                    : 'Quota and object registrations live on Soroban. Encrypted bytes live on the Evernet API. Folders are organization metadata — they are not stored on-chain.'}
                 </p>
                 <ul className="dash-detail-list">
                   <li>Identity = Stellar address</li>
-                  <li>Leases credited after XLM payment</li>
-                  <li>Client-side encryption before upload</li>
+                  <li>Folders organize ciphertext off-chain</li>
+                  <li>Content hashes stay on Soroban</li>
                   <li>Contract: {shortenAddress(contractId)}</li>
                 </ul>
                 <button
@@ -579,11 +1059,52 @@ export default function Dashboard() {
 
           {dragging && authed && (
             <div className="dash-drop-overlay">
-              <p>Drop to encrypt & upload</p>
+              <p>Drop to encrypt & upload{currentFolder ? ` into ${currentFolder}` : ''}</p>
             </div>
           )}
         </div>
       </div>
+
+      {newFolderOpen && (
+        <div className="pay-overlay" role="dialog" aria-modal="true" aria-labelledby="folder-title">
+          <button type="button" className="pay-backdrop" aria-label="Close" onClick={() => setNewFolderOpen(false)} />
+          <div className="pay-modal dash-folder-modal">
+            <header className="pay-head">
+              <div>
+                <p className="pay-eyebrow">Organize</p>
+                <h2 id="folder-title">New folder</h2>
+              </div>
+              <button type="button" className="pay-close" onClick={() => setNewFolderOpen(false)}>
+                Close
+              </button>
+            </header>
+            <p className="pay-lead">
+              Created inside <strong>{currentFolder || 'Vault'}</strong>. Folder names stay on the Evernet API — only
+              content hashes are registered on Stellar.
+            </p>
+            <label className="dash-folder-field">
+              Name
+              <input
+                autoFocus
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleCreateFolder()
+                }}
+                placeholder="e.g. Credentials"
+              />
+            </label>
+            <button
+              type="button"
+              className="dash-btn primary pay-cta"
+              disabled={busy || !newFolderName.trim()}
+              onClick={() => void handleCreateFolder()}
+            >
+              Create folder
+            </button>
+          </div>
+        </div>
+      )}
 
       <BuyStorageModal
         open={buyOpen}

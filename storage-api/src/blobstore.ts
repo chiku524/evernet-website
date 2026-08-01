@@ -97,23 +97,52 @@ class VercelBlobDriver implements Driver {
   }
 
   async putBytes(key: string, data: Buffer, contentType: string): Promise<string> {
-    const { put } = await this.sdk()
+    const { put, del } = await this.sdk()
+    // Delete-first overwrite: allowOverwrite alone has been observed to leave
+    // stale public URL bodies when listing immediately after a metadata patch.
+    try {
+      await del(key, { token: config.blobToken })
+    } catch {
+      /* first write */
+    }
     const res = await put(key, data, {
       access: 'public',
       contentType,
       addRandomSuffix: false,
       allowOverwrite: true,
+      cacheControlMaxAge: 0,
       token: config.blobToken,
     })
     return res.url
   }
 
-  async getBytes(locator: string): Promise<Buffer | null> {
-    const url = locator.startsWith('http') ? locator : await this.urlFor(locator)
-    if (!url) return null
-    const res = await fetch(url)
+  private async fetchBytes(url: string): Promise<Buffer | null> {
+    const bust = url.includes('?') ? `&_=${Date.now()}` : `?_=${Date.now()}`
+    const res = await fetch(`${url}${bust}`, { cache: 'no-store' })
     if (!res.ok) return null
     return Buffer.from(await res.arrayBuffer())
+  }
+
+  async getBytes(locator: string): Promise<Buffer | null> {
+    const { get } = await this.sdk()
+    try {
+      // useCache: false reads origin storage so overwrites are visible immediately.
+      const result = await get(locator, {
+        access: 'public',
+        token: config.blobToken,
+        useCache: false,
+      })
+      if (result?.stream) {
+        const res = new Response(result.stream as ReadableStream)
+        return Buffer.from(await res.arrayBuffer())
+      }
+    } catch {
+      /* not found or unsupported locator */
+    }
+    if (locator.startsWith('http')) return this.fetchBytes(locator)
+    const url = await this.urlFor(locator)
+    if (!url) return null
+    return this.fetchBytes(url)
   }
 
   async delBytes(locator: string): Promise<void> {
@@ -136,7 +165,20 @@ class VercelBlobDriver implements Driver {
   }
 
   async putJson(key: string, value: unknown): Promise<void> {
-    await this.putBytes(key, Buffer.from(JSON.stringify(value)), 'application/json')
+    const payload = Buffer.from(JSON.stringify(value))
+    const expected = payload.toString('utf8')
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await this.delBytes(key)
+        await new Promise((r) => setTimeout(r, 150 * attempt))
+      }
+      await this.putBytes(key, payload, 'application/json')
+      const readBack = await this.getBytes(key)
+      if (readBack?.toString('utf8') === expected) return
+    }
+
+    throw new Error(`Blob metadata write failed to persist for ${key}`)
   }
 
   async getJson<T>(key: string): Promise<T | null> {
@@ -150,8 +192,7 @@ class VercelBlobDriver implements Driver {
   }
 
   async delJson(key: string): Promise<void> {
-    const url = await this.urlFor(key)
-    if (url) await this.delBytes(url)
+    await this.delBytes(key)
   }
 
   async listJson<T>(prefix: string): Promise<T[]> {
@@ -160,10 +201,12 @@ class VercelBlobDriver implements Driver {
     const found = await list({ prefix: normalized, limit: 1000, token: config.blobToken })
     const results = await Promise.all(
       found.blobs.map(async (b): Promise<T | null> => {
-        const res = await fetch(b.url)
-        if (!res.ok) return null
+        // Read by pathname when possible so we get the latest overwrite.
+        const pathname = b.pathname || null
+        const buf = pathname ? await this.getBytes(pathname) : await this.fetchBytes(b.url)
+        if (!buf) return null
         try {
-          return (await res.json()) as T
+          return JSON.parse(buf.toString('utf8')) as T
         } catch {
           return null
         }

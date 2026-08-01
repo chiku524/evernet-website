@@ -311,6 +311,130 @@
   margin-top: 0.5rem;
 }
 
+.dash-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: center;
+  margin-top: 0.35rem;
+}
+
+.dash-folder-tree {
+  margin: 0.5rem 0 1rem;
+  padding: 0 0.25rem;
+}
+
+.dash-folder-tree ul {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.dash-folder-link {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 0;
+  background: transparent;
+  color: rgba(244, 250, 248, 0.78);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dash-folder-link:hover,
+.dash-folder-link.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4faf8;
+}
+
+.dash-folder-link svg {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.dash-crumb-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+button.dash-crumb {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.dash-up-row td {
+  padding: 0.35rem 0.75rem !important;
+  background: rgba(232, 242, 240, 0.55);
+}
+
+.dash-up-btn {
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0.25rem 0;
+}
+
+.dash-up-btn:hover {
+  color: var(--ink);
+}
+
+.dash-detail-form {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1.1rem;
+}
+
+.dash-detail-form label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dash-detail-form input,
+.dash-detail-form select,
+.dash-folder-field input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 0.55rem 0.65rem;
+}
+
+.dash-folder-modal {
+  max-width: 28rem;
+}
+
+.dash-folder-field {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.75rem 0 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .dash-empty-hint {
   max-width: 42ch;
   margin-inline: auto;

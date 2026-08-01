@@ -15,7 +15,11 @@ dist-ssr
 .treasury-secret.local
 .admin-secret.local
 .env
+.env.*
+!.env.example
 storage-api/.env
+storage-api/.env.*
+!storage-api/.env.example
 storage-api/data/
 storage-api/.vercel/
 contracts/**/target/

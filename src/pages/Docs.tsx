@@ -179,19 +179,31 @@ export default function Docs() {
             <h2>Using the vault</h2>
             <ul>
               <li>
+                <strong>Folders</strong> — create folders to organize uploads. Breadcrumbs navigate the tree; drag a
+                file onto a folder row to move it. Folder names live on the Evernet API (not on Stellar) so organizing
+                stays cheap and private from the public ledger.
+              </li>
+              <li>
                 <strong>Upload / drag-and-drop</strong> — files are encrypted client-side (AES-GCM), then sent as
-                ciphertext to the Evernet API. A content hash is registered to your wallet on Soroban.
+                ciphertext to the Evernet API into the folder you’re viewing. Dropping a directory from your computer
+                (or using Upload folder) preserves the relative tree. A content hash is registered to your wallet on
+                Soroban.
               </li>
               <li>
                 <strong>Download</strong> — ciphertext is fetched and decrypted in your browser with a key derived from
                 your wallet address (v1 helper). Use the same Stellar address to recover files on another device.
               </li>
               <li>
-                <strong>Delete</strong> — removes the blob and frees quota on your profile.
+                <strong>Rename & move</strong> — select a file or folder to rename it, or move a file into another
+                folder from the detail panel. Search finds files across every folder and can jump to their location.
+              </li>
+              <li>
+                <strong>Delete</strong> — removes a blob and frees quota, or deletes a folder (optionally with
+                everything inside it).
               </li>
               <li>
                 <strong>Quota meter</strong> — shows used vs total bytes from your on-chain / API profile (includes the
-                free 5 GB base tier).
+                free 5 GB base tier). Folders themselves do not consume quota.
               </li>
             </ul>
           </section>

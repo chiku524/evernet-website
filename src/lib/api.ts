@@ -21,6 +21,8 @@ export type ApiObject = {
   hash: string
   owner: string
   name: string
+  /** Relative folder path; empty string = vault root. */
+  folder: string
   mimeType: string
   size: number
   encrypted: boolean
@@ -28,6 +30,11 @@ export type ApiObject = {
   shards: number
   /** Soroban register_object transaction hash */
   registrationTx?: string
+}
+
+export type VaultListing = {
+  objects: ApiObject[]
+  folders: string[]
 }
 
 function getToken(): string | null {
@@ -117,17 +124,51 @@ export async function getProfile(): Promise<ApiProfile> {
   return api<ApiProfile>('/profile')
 }
 
-export async function listObjects(): Promise<ApiObject[]> {
-  const res = await api<{ objects: ApiObject[] }>('/objects')
-  return res.objects
+export async function listVault(): Promise<VaultListing> {
+  const res = await api<{ objects: ApiObject[]; folders?: string[] }>('/objects')
+  return {
+    objects: (res.objects || []).map((o) => ({ ...o, folder: o.folder || '' })),
+    folders: res.folders || [],
+  }
 }
 
-export async function uploadObject(file: Blob, meta: { name: string; mimeType: string; encrypted: boolean }) {
+/** @deprecated prefer listVault */
+export async function listObjects(): Promise<ApiObject[]> {
+  return (await listVault()).objects
+}
+
+export async function createFolder(path: string): Promise<string[]> {
+  const res = await api<{ folders: string[] }>('/folders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  })
+  return res.folders
+}
+
+export async function renameFolder(from: string, to: string): Promise<{ folders: string[]; moved: number }> {
+  return api('/folders', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to }),
+  })
+}
+
+export async function deleteFolder(path: string, recursive = false): Promise<{ folders: string[] }> {
+  const qs = new URLSearchParams({ path, recursive: String(recursive) })
+  return api(`/folders?${qs}`, { method: 'DELETE' })
+}
+
+export async function uploadObject(
+  file: Blob,
+  meta: { name: string; mimeType: string; encrypted: boolean; folder?: string },
+) {
   const form = new FormData()
   form.append('file', file, meta.name)
   form.append('name', meta.name)
   form.append('mimeType', meta.mimeType)
   form.append('encrypted', String(meta.encrypted))
+  form.append('folder', meta.folder || '')
   const token = getToken()
   const res = await apiFetch('/objects', {
     method: 'POST',
@@ -136,7 +177,18 @@ export async function uploadObject(file: Blob, meta: { name: string; mimeType: s
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error((data as { error?: string }).error || 'Upload failed')
-  return data as { object: ApiObject; profile: ApiProfile }
+  return data as { object: ApiObject; profile: ApiProfile; folders?: string[] }
+}
+
+export async function updateObject(
+  hash: string,
+  patch: { name?: string; folder?: string },
+): Promise<{ object: ApiObject; folders: string[] }> {
+  return api(`/objects/${hash}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
 }
 
 export async function downloadObject(hash: string): Promise<Blob> {
