@@ -20,6 +20,7 @@ const tocGuide = [
 const tocDev = [
   { id: 'api', label: 'Developer API' },
   { id: 'api-auth', label: 'API authentication' },
+  { id: 'cloud', label: 'Cloud storage (S3-shaped)' },
   { id: 'sdk', label: 'TypeScript SDK' },
   { id: 'api-keys', label: 'API keys' },
   { id: 'projects', label: 'Project pools' },
@@ -395,6 +396,92 @@ export default function Docs() {
             </ol>
           </section>
 
+          <section id="cloud">
+            <h2>Cloud storage (S3-shaped)</h2>
+            <p>
+              Toward wallet-native cloud storage on Stellar, Evernet exposes a JSON <strong>S3-shaped</strong> surface
+              under <code>/s3/v1</code> (not full AWS XML compatibility yet). Same vault, auth, quota, and encryption
+              model — with keys, multipart, ranged GET, and presigned downloads.
+            </p>
+            <div className="docs-table-wrap">
+              <table className="docs-table">
+                <thead>
+                  <tr>
+                    <th>Capability</th>
+                    <th>Endpoint</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>List by prefix</td>
+                    <td>
+                      <code>GET /s3/v1/objects?prefix=&amp;delimiter=/</code>
+                    </td>
+                    <td>
+                      Returns <code>contents</code> + <code>commonPrefixes</code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Put object</td>
+                    <td>
+                      <code>PUT /s3/v1/object?key=docs/a.bin</code>
+                    </td>
+                    <td>Raw body · max 80&nbsp;MB · headers <code>X-Evernet-Mime</code>, <code>X-Evernet-Encrypted</code></td>
+                  </tr>
+                  <tr>
+                    <td>Get object</td>
+                    <td>
+                      <code>GET /s3/v1/object?key=…</code>
+                    </td>
+                    <td>
+                      Supports <code>Range: bytes=…</code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Delete</td>
+                    <td>
+                      <code>DELETE /s3/v1/object?key=…</code>
+                    </td>
+                    <td>Frees wallet (+ project) quota</td>
+                  </tr>
+                  <tr>
+                    <td>Multipart</td>
+                    <td>
+                      <code>/s3/v1/multipart…</code>
+                    </td>
+                    <td>Up to 64 parts × 16&nbsp;MB (~1&nbsp;GB)</td>
+                  </tr>
+                  <tr>
+                    <td>Presigned GET</td>
+                    <td>
+                      <code>POST /s3/v1/presign</code> → <code>GET /s3/v1/presigned/:token</code>
+                    </td>
+                    <td>Time-limited download without Bearer header</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <pre className="docs-code">
+              <code>{`# after wallet JWT or API key
+curl -X PUT "${API_BASE}/s3/v1/object?key=docs/report.bin" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/octet-stream" \\
+  -H "X-Evernet-Encrypted: true" \\
+  --data-binary @ciphertext.bin
+
+curl -X POST ${API_BASE}/s3/v1/presign \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"key":"docs/report.bin","expiresInSec":3600}'`}</code>
+            </pre>
+            <p>
+              Probe: <a href={`${API_BASE}/s3/v1`} target="_blank" rel="noreferrer">{`${API_BASE}/s3/v1`}</a>. SDK
+              helpers: <code>s3Put</code>, <code>s3Get</code>, <code>s3List</code>, <code>s3MultipartPut</code>,{' '}
+              <code>s3Presign</code>.
+            </p>
+          </section>
+
           <section id="sdk">
             <h2>TypeScript SDK</h2>
             <p>
@@ -692,6 +779,18 @@ curl -X POST ${API_BASE}/keys \\
                     <td>Bearer</td>
                     <td>
                       <code>{`{ planId, txHash }`}</code> after XLM payment
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>*</code>
+                    </td>
+                    <td>
+                      <code>/s3/v1/…</code>
+                    </td>
+                    <td>Bearer*</td>
+                    <td>
+                      S3-shaped cloud surface — see <a href="#cloud">Cloud storage</a> (*presigned GET is public)
                     </td>
                   </tr>
                 </tbody>

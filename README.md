@@ -17,7 +17,9 @@ Public HTTP API for wallet-linked encrypted object storage (same surface as the 
 
 Auth: SEP-10 style challenge → JWT Bearer, or API keys (`evn_live_…`) for servers. Prefer server-side calls from third-party apps (browser CORS is limited to Evernet / localhost / Vercel previews).
 
-**SDK:** [`sdk/`](sdk/) (`evernet-sdk` on npm) — `encryptAndUpload`, download/decrypt, folders, quota, API keys, projects.
+**SDK:** [`sdk/`](sdk/) (`evernet-sdk` on npm) — vault helpers plus S3-shaped `s3Put` / `s3MultipartPut` / `s3Presign`.
+
+**Cloud surface:** [`/s3/v1`](https://evernet-storage-api.vercel.app/s3/v1) — key/prefix list, multipart (≤1 GB), ranged GET, presigned downloads.
 
 ```bash
 npm run sdk:build

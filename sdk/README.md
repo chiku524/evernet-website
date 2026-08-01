@@ -40,6 +40,16 @@ const plain = await client.downloadAndDecrypt(object.hash, passphrase)
 
 `walletPassphrase(address)` is a demo convenience helper that matches the vault’s “convenience mode.” Prefer a strong user-chosen secret in production.
 
+## S3-shaped cloud API
+
+```ts
+await client.s3Put('docs/report.bin', ciphertext, { encrypted: true })
+const listed = await client.s3List({ prefix: 'docs/', delimiter: '/' })
+const { url } = await client.s3Presign({ key: 'docs/report.bin', expiresInSec: 3600 })
+// large payloads:
+await client.s3MultipartPut('media/video.bin', bigCiphertext, { encrypted: true })
+```
+
 ## API keys & project pools
 
 Create keys (and optional project soft caps) with a wallet JWT in the [vault](https://evernet.tech/dashboard) or via the SDK, then:

@@ -221,6 +221,165 @@ export class EvernetClient {
     return decryptBlob(blob, passphrase)
   }
 
+  // —— S3-shaped cloud surface (`/s3/v1`) ——
+
+  async s3List(opts: { prefix?: string; delimiter?: string } = {}) {
+    const qs = new URLSearchParams()
+    if (opts.prefix) qs.set('prefix', opts.prefix)
+    if (opts.delimiter !== undefined) qs.set('delimiter', opts.delimiter)
+    const q = qs.toString()
+    return this.json<{
+      contents: Array<{ key: string; hash: string; size: number; lastModified: number; mimeType: string }>
+      commonPrefixes: string[]
+      keyCount: number
+    }>(`/s3/v1/objects${q ? `?${q}` : ''}`)
+  }
+
+  async s3Put(
+    key: string,
+    data: Blob | ArrayBuffer | Uint8Array,
+    opts: { mimeType?: string; encrypted?: boolean; overwrite?: boolean } = {},
+  ) {
+    const bytes =
+      data instanceof Blob
+        ? new Uint8Array(await data.arrayBuffer())
+        : data instanceof ArrayBuffer
+          ? new Uint8Array(data)
+          : data
+    const qs = new URLSearchParams({ key })
+    if (opts.overwrite === false) qs.set('overwrite', 'false')
+    const res = await this.raw(`/s3/v1/object?${qs}`, {
+      method: 'PUT',
+      headers: this.authHeaders({
+        'Content-Type': 'application/octet-stream',
+        'X-Evernet-Mime': opts.mimeType || 'application/octet-stream',
+        'X-Evernet-Encrypted': String(opts.encrypted ?? true),
+      }),
+      body: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new EvernetError((body as { error?: string }).error || 'S3 put failed', {
+        status: res.status,
+        body,
+      })
+    }
+    return body as { key: string; object: EvernetObject; profile: EvernetProfile }
+  }
+
+  async s3Get(key: string, opts: { range?: string } = {}): Promise<Blob> {
+    const headers = this.authHeaders()
+    if (opts.range) headers.set('Range', opts.range)
+    const res = await this.raw(`/s3/v1/object?key=${encodeURIComponent(key)}`, { headers })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new EvernetError((body as { error?: string }).error || 'S3 get failed', {
+        status: res.status,
+        body,
+      })
+    }
+    return res.blob()
+  }
+
+  async s3Delete(key: string) {
+    return this.json<{ ok: boolean; profile: EvernetProfile }>(
+      `/s3/v1/object?key=${encodeURIComponent(key)}`,
+      { method: 'DELETE' },
+    )
+  }
+
+  async s3Presign(input: { key?: string; hash?: string; expiresInSec?: number }) {
+    return this.json<{ url: string; token: string; expiresAt: number; key: string; hash: string }>(
+      '/s3/v1/presign',
+      { method: 'POST', body: JSON.stringify(input) },
+    )
+  }
+
+  async s3CreateMultipart(input: { key: string; mimeType?: string; encrypted?: boolean }) {
+    return this.json<{
+      uploadId: string
+      key: string
+      expiresAt: number
+      maxPartBytes: number
+      maxParts: number
+    }>('/s3/v1/multipart', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  async s3UploadPart(uploadId: string, partNumber: number, data: Blob | Uint8Array | ArrayBuffer) {
+    const bytes =
+      data instanceof Blob
+        ? new Uint8Array(await data.arrayBuffer())
+        : data instanceof ArrayBuffer
+          ? new Uint8Array(data)
+          : data
+    const res = await this.raw(`/s3/v1/multipart/${uploadId}/${partNumber}`, {
+      method: 'PUT',
+      headers: this.authHeaders({ 'Content-Type': 'application/octet-stream' }),
+      body: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new EvernetError((body as { error?: string }).error || 'Part upload failed', {
+        status: res.status,
+        body,
+      })
+    }
+    return body as { uploadId: string; partNumber: number; etag: string; size: number }
+  }
+
+  async s3CompleteMultipart(
+    uploadId: string,
+    parts: Array<{ partNumber: number; etag?: string }>,
+  ) {
+    return this.json<{ key: string; object: EvernetObject; profile: EvernetProfile }>(
+      `/s3/v1/multipart/${uploadId}/complete`,
+      { method: 'POST', body: JSON.stringify({ parts }) },
+    )
+  }
+
+  async s3AbortMultipart(uploadId: string) {
+    return this.json<{ ok: boolean }>(`/s3/v1/multipart/${uploadId}`, { method: 'DELETE' })
+  }
+
+  /**
+   * Upload large ciphertext via multipart (≤16MB/part, ≤64 parts).
+   * Encrypt first yourself, or pass already-encrypted bytes.
+   */
+  async s3MultipartPut(
+    key: string,
+    data: Blob | ArrayBuffer | Uint8Array,
+    opts: { mimeType?: string; encrypted?: boolean; partSize?: number } = {},
+  ) {
+    const bytes =
+      data instanceof Blob
+        ? new Uint8Array(await data.arrayBuffer())
+        : data instanceof ArrayBuffer
+          ? new Uint8Array(data)
+          : data
+    const partSize = Math.min(Math.max(opts.partSize || 8 * 1024 * 1024, 256 * 1024), 16 * 1024 * 1024)
+    const created = await this.s3CreateMultipart({
+      key,
+      mimeType: opts.mimeType,
+      encrypted: opts.encrypted,
+    })
+    const parts: Array<{ partNumber: number; etag: string }> = []
+    try {
+      let offset = 0
+      let partNumber = 1
+      while (offset < bytes.length) {
+        const chunk = bytes.subarray(offset, Math.min(offset + partSize, bytes.length))
+        const uploaded = await this.s3UploadPart(created.uploadId, partNumber, chunk)
+        parts.push({ partNumber, etag: uploaded.etag })
+        offset += chunk.length
+        partNumber += 1
+      }
+      return await this.s3CompleteMultipart(created.uploadId, parts)
+    } catch (err) {
+      await this.s3AbortMultipart(created.uploadId).catch(() => undefined)
+      throw err
+    }
+  }
+
   async updateObject(hash: string, patch: { name?: string; folder?: string }) {
     return this.json<{ object: EvernetObject; folders: string[] }>(`/objects/${hash}`, {
       method: 'PATCH',

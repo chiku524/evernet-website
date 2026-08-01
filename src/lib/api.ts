@@ -23,6 +23,8 @@ export type ApiObject = {
   name: string
   /** Relative folder path; empty string = vault root. */
   folder: string
+  /** S3-style key (`folder/name`), when returned by the API. */
+  key?: string
   mimeType: string
   size: number
   encrypted: boolean

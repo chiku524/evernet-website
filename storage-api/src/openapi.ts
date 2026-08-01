@@ -1,11 +1,11 @@
 /** OpenAPI 3.0 description of the Evernet Storage API (v1). */
 export const openApiSpec = {
   openapi: '3.0.3',
-  info: {
+    info: {
     title: 'Evernet Storage API',
-    version: '1.0.0',
+    version: '1.1.0',
     description:
-      'Wallet-linked encrypted object storage for Stellar. Authenticate with a SEP-10 style challenge, then upload/list/download ciphertext tied to a G-address. Quota and content hashes are registered on Soroban; bytes live off-chain.',
+      'Wallet-linked encrypted object storage for Stellar. Authenticate with a SEP-10 style challenge or API key, then upload/list/download ciphertext tied to a G-address. Includes an S3-shaped /s3/v1 surface (multipart, ranged GET, presigned downloads). Quota and content hashes register on Soroban; bytes live off-chain.',
     contact: { url: 'https://evernet.tech' },
   },
   servers: [
@@ -366,6 +366,64 @@ export const openApiSpec = {
           { name: 'recursive', in: 'query', schema: { type: 'boolean' } },
         ],
         responses: { '200': { description: '{ ok, folders, deletedHashes }' } },
+      },
+    },
+    '/s3/v1': {
+      get: {
+        tags: ['Public'],
+        summary: 'S3-shaped cloud API capability probe',
+        responses: { '200': { description: 'Endpoint map + limits' } },
+      },
+    },
+    '/s3/v1/objects': {
+      get: {
+        tags: ['Objects'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List objects by prefix (S3-shaped)',
+        parameters: [
+          { name: 'prefix', in: 'query', schema: { type: 'string' } },
+          { name: 'delimiter', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: { '200': { description: '{ contents, commonPrefixes }' } },
+      },
+    },
+    '/s3/v1/object': {
+      put: {
+        tags: ['Objects'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Put object by key (raw body, max 80MB)',
+        parameters: [{ name: 'key', in: 'query', required: true, schema: { type: 'string' } }],
+        responses: { '201': { description: '{ key, object, profile }' } },
+      },
+      get: {
+        tags: ['Objects'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Get object by key (supports Range)',
+        parameters: [{ name: 'key', in: 'query', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Bytes' }, '206': { description: 'Partial content' } },
+      },
+      delete: {
+        tags: ['Objects'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Delete object by key',
+        parameters: [{ name: 'key', in: 'query', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: '{ ok, profile }' } },
+      },
+    },
+    '/s3/v1/presign': {
+      post: {
+        tags: ['Objects'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Create time-limited download URL',
+        responses: { '200': { description: '{ url, token, expiresAt }' } },
+      },
+    },
+    '/s3/v1/multipart': {
+      post: {
+        tags: ['Objects'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Start multipart upload (up to 64×16MB)',
+        responses: { '201': { description: '{ uploadId, key, … }' } },
       },
     },
     '/purchases/confirm': {

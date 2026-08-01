@@ -17,7 +17,6 @@ import {
   deleteObjectOnChain,
   getMergedProfile,
   onChainEnabled,
-  registerObjectOnChain,
 } from './soroban.js'
 import { normalizeFolderPath } from './paths.js'
 import { createApiKey, listApiKeys, revokeApiKey } from './apikeys.js'
@@ -25,14 +24,15 @@ import { openApiSpec } from './openapi.js'
 import {
   archiveProject,
   createProject,
-  creditProjectUpload,
   debitProjectUpload,
   getProject,
   listProjects,
   updateProject,
 } from './projects.js'
+import { ingestObject } from './ingest.js'
 import { publicObject, publicObjects } from './publicMeta.js'
 import { REQUESTS_PER_MINUTE, rateLimit } from './ratelimit.js'
+import { s3Router } from './s3.js'
 import {
   createFolder,
   deleteFolder,
@@ -41,11 +41,8 @@ import {
   listFolders,
   listObjects,
   readBlob,
-  registerObjectLocal,
   patchObjectMeta,
   renameFolder,
-  sha256Hex,
-  writeBlob,
   type StoredObjectMeta,
 } from './store.js'
 
@@ -97,6 +94,19 @@ app.use((_req, res, next) => {
   next()
 })
 app.use(cors({ origin: allowedOrigin }))
+
+/** Raw bodies for S3-shaped PUT (must run before JSON parser). */
+app.use((req, res, next) => {
+  if (req.method !== 'PUT') return next()
+  if (req.path === '/s3/v1/object') {
+    return express.raw({ type: '*/*', limit: '80mb' })(req, res, next)
+  }
+  if (/^\/s3\/v1\/multipart\/[^/]+\/\d+$/.test(req.path)) {
+    return express.raw({ type: '*/*', limit: '16mb' })(req, res, next)
+  }
+  next()
+})
+
 app.use(express.json({ limit: '2mb' }))
 app.use(rateLimit)
 
@@ -105,11 +115,15 @@ app.get('/', (_req, res) => {
     name: 'Evernet Storage API',
     version: API_VERSION,
     docs: 'https://evernet.tech/docs#api',
+    cloud: 'https://evernet.tech/docs#cloud',
     openapi: '/openapi.json',
     health: '/health',
     config: '/config/public',
+    s3: '/s3/v1',
   })
 })
+
+app.use('/s3/v1', s3Router)
 
 app.get('/openapi.json', (_req, res) => {
   res.json(openApiSpec)
@@ -388,77 +402,28 @@ app.post('/objects', requireWallet, upload.single('file'), async (req: AuthedReq
       return
     }
     const owner = req.wallet!
-    const name = String(req.body?.name || req.file.originalname || 'file.bin')
-    const folder = normalizeFolderPath(req.body?.folder)
-    const mimeType = String(req.body?.mimeType || req.file.mimetype || 'application/octet-stream')
-    const encrypted = String(req.body?.encrypted || 'true') === 'true'
-    const buf = req.file.buffer
-    const hash = sha256Hex(buf)
-
-    if (await getObject(owner, hash)) {
-      res.status(409).json({ error: 'You already stored this exact file', hash })
-      return
-    }
-
-    const profile = await getMergedProfile(owner)
-    if (profile.usedBytes + buf.length > profile.quotaBytes) {
-      res.status(402).json({
-        error: 'Insufficient quota',
-        remaining: Math.max(0, profile.quotaBytes - profile.usedBytes),
-        need: buf.length,
-      })
-      return
-    }
-
-    if (req.projectId) {
-      const project = await getProject(req.projectId)
-      if (!project || project.archivedAt || project.owner !== owner) {
-        res.status(400).json({ error: 'Invalid project for API key' })
-        return
-      }
-      if (project.maxBytes != null && project.usedBytes + buf.length > project.maxBytes) {
-        res.status(402).json({
-          error: `Project quota exceeded (${project.usedBytes + buf.length} > ${project.maxBytes})`,
-        })
-        return
-      }
-    }
-
-    const blobRef = await writeBlob(owner, buf)
-    const meta: StoredObjectMeta = {
-      hash,
+    const result = await ingestObject({
       owner,
-      name,
-      folder,
-      mimeType,
-      size: buf.length,
-      encrypted,
-      createdAt: Date.now(),
-      shards: Math.max(4, Math.min(32, Math.ceil(buf.length / (256 * 1024)) * 4)),
-      blobRef,
+      data: req.file.buffer,
+      name: String(req.body?.name || req.file.originalname || 'file.bin'),
+      folder: normalizeFolderPath(req.body?.folder),
+      mimeType: String(req.body?.mimeType || req.file.mimetype || 'application/octet-stream'),
+      encrypted: String(req.body?.encrypted || 'true') === 'true',
       projectId: req.projectId,
-    }
-    const updated = await registerObjectLocal(meta)
-    if (req.projectId) {
-      const credited = await creditProjectUpload(req.projectId, buf.length)
-      if (!credited.ok) {
-        await deleteObjectLocal(owner, hash).catch(() => undefined)
-        res.status(402).json({ error: credited.error })
-        return
-      }
-    }
-    const registrationTx = await registerObjectOnChain({ owner, hashHex: hash, size: buf.length })
-    const object = registrationTx
-      ? ((await patchObjectMeta(owner, hash, { registrationTx })) ?? { ...meta, registrationTx })
-      : meta
-
+    })
     res.status(201).json({
-      object: publicObject(object),
-      profile: updated,
+      object: publicObject(result.object),
+      profile: result.profile,
       folders: await listFolders(owner),
     })
   } catch (err) {
-    res.status(400).json({ error: err instanceof Error ? err.message : 'Upload failed' })
+    const e = err as Error & { status?: number; hash?: string; remaining?: number; need?: number }
+    res.status(e.status || 400).json({
+      error: e.message || 'Upload failed',
+      hash: e.hash,
+      remaining: e.remaining,
+      need: e.need,
+    })
   }
 })
 

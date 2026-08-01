@@ -12,6 +12,8 @@ export type EvernetObject = {
   owner: string
   name: string
   folder: string
+  /** S3-style key: `folder/name` or `name`. */
+  key?: string
   mimeType: string
   size: number
   encrypted: boolean
