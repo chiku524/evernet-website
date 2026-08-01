@@ -104,6 +104,8 @@ export function shortenAddress(address: string): string {
   return `${address.slice(0, 4)}…${address.slice(-4)}`
 }
 
+export const FREIGHTER_DOWNLOAD_URL = 'https://www.freighter.app/'
+
 export async function isFreighterInstalled(): Promise<boolean> {
   try {
     const result = await freighterApi.isConnected()
@@ -113,7 +115,16 @@ export async function isFreighterInstalled(): Promise<boolean> {
   }
 }
 
+/** If Freighter is missing, open the download page and throw a clear error. */
+export async function ensureFreighterInstalled(): Promise<void> {
+  const installed = await isFreighterInstalled()
+  if (installed) return
+  window.open(FREIGHTER_DOWNLOAD_URL, '_blank', 'noopener,noreferrer')
+  throw new Error('Freighter is not installed. We opened the download page — install it, then return here to connect.')
+}
+
 export async function connectFreighter(): Promise<string> {
+  await ensureFreighterInstalled()
   const access = await freighterApi.requestAccess()
   if (access.error) throw new Error(access.error)
   const { address, error } = await freighterApi.getAddress()
@@ -184,11 +195,6 @@ export async function purchaseStoragePlan(
   receiver = DEFAULT_RECEIVER,
 ): Promise<PaymentResult> {
   const cfg = getNetworkConfig(network)
-  const installed = await isFreighterInstalled()
-  if (!installed) {
-    throw new Error('Install the Freighter wallet extension to pay with XLM on Stellar.')
-  }
-
   const address = await connectFreighter()
 
   const net = await freighterApi.getNetworkDetails()

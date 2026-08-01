@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { Buffer } from 'buffer'
 import './index.css'
 import './dashboard.css'
+import './docs.css'
 import App from './App.tsx'
 
 globalThis.Buffer = Buffer

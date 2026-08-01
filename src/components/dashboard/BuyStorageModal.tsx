@@ -3,6 +3,7 @@ import { confirmPurchase, loginWithFreighter, sessionAddress } from '../../lib/a
 import { formatBytes } from '../../lib/format'
 import {
   DEFAULT_RECEIVER,
+  FREIGHTER_DOWNLOAD_URL,
   STORAGE_CONTRACT_ID,
   STORAGE_PLANS,
   type StellarNetworkId,
@@ -138,7 +139,7 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast, wallet 
               ) : hasFreighter === false ? (
                 <>
                   Freighter not detected ·{' '}
-                  <a href="https://freighter.app" target="_blank" rel="noreferrer">
+                  <a href={FREIGHTER_DOWNLOAD_URL} target="_blank" rel="noreferrer">
                     Install Freighter
                   </a>
                 </>
@@ -148,7 +149,13 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast, wallet 
             </p>
           </div>
           <button type="button" className="dash-btn ghost" onClick={() => void handleConnect()} disabled={connecting}>
-            {address ? 'Reconnect' : connecting ? 'Connecting…' : 'Connect Freighter'}
+            {address
+              ? 'Reconnect'
+              : connecting
+                ? 'Connecting…'
+                : hasFreighter === false
+                  ? 'Install Freighter'
+                  : 'Connect Freighter'}
           </button>
         </div>
 

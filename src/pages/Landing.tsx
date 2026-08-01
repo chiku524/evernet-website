@@ -157,7 +157,7 @@ export default function Landing() {
             <a href="#solution">Product</a>
             <a href="#strategy">Strategy</a>
             <a href="#stellar">Stellar</a>
-            <a href="#roadmap">Roadmap</a>
+            <Link to="/docs">Docs</Link>
             <Link className="nav-cta" to="/dashboard">
               Open vault
             </Link>

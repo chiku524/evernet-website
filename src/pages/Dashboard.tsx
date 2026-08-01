@@ -22,6 +22,7 @@ import {
   connectFreighter,
   disconnectFreighterLocal,
   getFreighterAddress,
+  isFreighterInstalled,
   loadPreferredNetwork,
   shortenAddress,
   type StellarNetworkId,
@@ -66,6 +67,7 @@ export default function Dashboard() {
   const [onChain, setOnChain] = useState(false)
   const [contractId, setContractId] = useState(STORAGE_CONTRACT_ID)
   const [apiOnline, setApiOnline] = useState<boolean | null>(null)
+  const [hasFreighter, setHasFreighter] = useState<boolean | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
 
@@ -84,6 +86,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     void (async () => {
+      setHasFreighter(await isFreighterInstalled())
       try {
         const cfg = await fetchPublicConfig()
         setApiOnline(true)
@@ -230,6 +233,9 @@ export default function Dashboard() {
           <button type="button" className="dash-nav-btn" onClick={() => setBuyOpen(true)}>
             Buy storage
           </button>
+          <Link to="/docs" className="dash-nav-btn">
+            Docs
+          </Link>
         </nav>
 
         <div className="dash-quota">
@@ -306,7 +312,7 @@ export default function Dashboard() {
             )}
             {!authed ? (
               <button type="button" className="dash-btn primary" disabled={busy} onClick={() => void connectAndAuth()}>
-                {busy ? 'Connecting…' : 'Connect Freighter'}
+                {busy ? 'Connecting…' : hasFreighter === false ? 'Install Freighter' : 'Connect Freighter'}
               </button>
             ) : (
               <>
@@ -371,7 +377,7 @@ export default function Dashboard() {
                   stored on the Evernet API, and registered on-chain.
                 </p>
                 <button type="button" className="dash-btn primary" disabled={busy} onClick={() => void connectAndAuth()}>
-                  Connect Freighter
+                  {busy ? 'Connecting…' : hasFreighter === false ? 'Install Freighter' : 'Connect Freighter'}
                 </button>
                 {apiOnline === false && (
                   <p style={{ color: '#a33d2d', marginTop: '1rem' }}>
