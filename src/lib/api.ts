@@ -221,3 +221,29 @@ export async function confirmPurchase(planId: string, txHash: string) {
     body: JSON.stringify({ planId, txHash }),
   })
 }
+
+export type ApiKeyInfo = {
+  id: string
+  name: string
+  prefix: string
+  createdAt: number
+  lastUsedAt?: number
+  revokedAt?: number
+}
+
+export async function listApiKeys(): Promise<ApiKeyInfo[]> {
+  const res = await api<{ keys: ApiKeyInfo[] }>('/keys')
+  return res.keys
+}
+
+export async function createApiKey(name: string): Promise<ApiKeyInfo & { key: string }> {
+  return api('/keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+}
+
+export async function revokeApiKey(id: string): Promise<void> {
+  await api(`/keys/${id}`, { method: 'DELETE' })
+}

@@ -16,6 +16,7 @@ export const openApiSpec = {
     { name: 'Public' },
     { name: 'Auth' },
     { name: 'Profile' },
+    { name: 'Keys' },
     { name: 'Objects' },
     { name: 'Folders' },
     { name: 'Purchases' },
@@ -25,8 +26,9 @@ export const openApiSpec = {
       bearerAuth: {
         type: 'http',
         scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'JWT from POST /auth/verify. Header: Authorization: Bearer <token>',
+        bearerFormat: 'JWT or API key',
+        description:
+          'Wallet JWT from POST /auth/verify, or API key `evn_live_…` (also accepted via X-Evernet-Api-Key).',
       },
     },
     schemas: {
@@ -154,6 +156,47 @@ export const openApiSpec = {
           '200': { description: 'Profile', content: { 'application/json': { schema: { $ref: '#/components/schemas/Profile' } } } },
           '401': { description: 'Missing or invalid token' },
         },
+      },
+    },
+    '/usage': {
+      get: {
+        tags: ['Profile'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Quota usage plus auth type and rate-limit metadata',
+        responses: { '200': { description: '{ profile, auth, limits }' } },
+      },
+    },
+    '/keys': {
+      get: {
+        tags: ['Keys'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List API keys (wallet JWT only)',
+        responses: { '200': { description: '{ keys }' } },
+      },
+      post: {
+        tags: ['Keys'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Create API key (wallet JWT only; secret returned once)',
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { name: { type: 'string' } },
+              },
+            },
+          },
+        },
+        responses: { '201': { description: '{ id, name, prefix, key, createdAt }' } },
+      },
+    },
+    '/keys/{id}': {
+      delete: {
+        tags: ['Keys'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Revoke API key (wallet JWT only)',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: '{ ok }' } },
       },
     },
     '/objects': {

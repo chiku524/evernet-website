@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Link } from 'react-router-dom'
 import { BuyStorageModal } from '../components/dashboard/BuyStorageModal'
 import {
+  type ApiKeyInfo,
   type ApiObject,
   type ApiProfile,
   apiBase,
   clearSession,
+  createApiKey,
   createFolder,
   deleteFolder,
   deleteObject,
@@ -13,9 +15,11 @@ import {
   fetchPublicConfig,
   getProfile,
   hasSession,
+  listApiKeys,
   listVault,
   loginWithWallet,
   renameFolder,
+  revokeApiKey,
   sessionAddress,
   updateObject,
   uploadObject,
@@ -110,6 +114,9 @@ export default function Dashboard() {
   const [onChain, setOnChain] = useState(false)
   const [contractId, setContractId] = useState(STORAGE_CONTRACT_ID)
   const [apiOnline, setApiOnline] = useState<boolean | null>(null)
+  const [apiKeys, setApiKeys] = useState<ApiKeyInfo[]>([])
+  const [createdKeySecret, setCreatedKeySecret] = useState<string | null>(null)
+  const [keyName, setKeyName] = useState('server')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
@@ -135,13 +142,15 @@ export default function Dashboard() {
       setProfile(null)
       setObjects([])
       setFolders([])
+      setApiKeys([])
       setAuthed(false)
       return
     }
-    const [p, listing] = await Promise.all([getProfile(), listVault()])
+    const [p, listing, keys] = await Promise.all([getProfile(), listVault(), listApiKeys().catch(() => [])])
     setProfile(p)
     setObjects(listing.objects)
     setFolders(listing.folders)
+    setApiKeys(keys)
     setAuthed(true)
   }, [])
 
@@ -371,6 +380,33 @@ export default function Dashboard() {
       setToast('Object deleted · quota freed')
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleCreateApiKey() {
+    setBusy(true)
+    try {
+      const created = await createApiKey(keyName.trim() || 'server')
+      setCreatedKeySecret(created.key)
+      setApiKeys(await listApiKeys())
+      setToast('API key created — copy it now; it won’t be shown again')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not create API key')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRevokeApiKey(id: string) {
+    setBusy(true)
+    try {
+      await revokeApiKey(id)
+      setApiKeys(await listApiKeys())
+      setToast('API key revoked')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Revoke failed')
     } finally {
       setBusy(false)
     }
@@ -1075,6 +1111,51 @@ export default function Dashboard() {
                 >
                   Buy storage with XLM
                 </button>
+
+                {authed && (
+                  <div className="dash-detail-form" style={{ marginTop: '1.5rem' }}>
+                    <p className="dash-detail-label">Developer API keys</p>
+                    <p className="dash-detail-copy">
+                      For server agents. Keys inherit this wallet’s quota. Manage only from a wallet session — see{' '}
+                      <Link to="/docs#sdk">SDK docs</Link>.
+                    </p>
+                    {createdKeySecret && (
+                      <label>
+                        New key (copy now)
+                        <input readOnly value={createdKeySecret} onFocus={(e) => e.target.select()} />
+                      </label>
+                    )}
+                    <label>
+                      Key name
+                      <input value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="server" />
+                    </label>
+                    <button
+                      type="button"
+                      className="dash-btn ghost"
+                      disabled={busy}
+                      onClick={() => void handleCreateApiKey()}
+                    >
+                      Create API key
+                    </button>
+                    {apiKeys.length > 0 && (
+                      <ul className="dash-detail-list">
+                        {apiKeys.map((k) => (
+                          <li key={k.id}>
+                            <code>{k.prefix}…</code> · {k.name}{' '}
+                            <button
+                              type="button"
+                              className="dash-hash-link"
+                              disabled={busy}
+                              onClick={() => void handleRevokeApiKey(k.id)}
+                            >
+                              Revoke
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </aside>

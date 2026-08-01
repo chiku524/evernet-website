@@ -8,9 +8,16 @@ import {
   Transaction,
   TransactionBuilder,
 } from '@stellar/stellar-sdk'
+import { looksLikeApiKey, resolveApiKey } from './apikeys.js'
 import { config } from './config.js'
+import { rateLimitAuthed } from './ratelimit.js'
 
-export type AuthedRequest = Request & { wallet?: string }
+export type AuthedRequest = Request & {
+  wallet?: string
+  authType?: 'jwt' | 'api_key'
+  apiKeyId?: string
+  apiKeyName?: string
+}
 
 const CHALLENGE_TTL_SECONDS = 300
 const HOME_DOMAIN = 'evernet.tech'
@@ -52,18 +59,51 @@ export function verifyToken(token: string): string | null {
   }
 }
 
+/**
+ * Accepts a wallet JWT or an API key (`evn_live_…`). Both authorize as the
+ * owning Stellar address. API keys are for server agents; JWTs for interactive
+ * wallet sessions.
+ */
 export function requireWallet(req: AuthedRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization
-  if (!header?.startsWith('Bearer ')) {
+  const apiKeyHeader = req.headers['x-evernet-api-key']
+  const bearer = header?.startsWith('Bearer ') ? header.slice(7).trim() : ''
+  const rawKey =
+    (typeof apiKeyHeader === 'string' ? apiKeyHeader.trim() : '') ||
+    (bearer && looksLikeApiKey(bearer) ? bearer : '')
+
+  if (rawKey) {
+    void resolveApiKey(rawKey)
+      .then((resolved) => {
+        if (!resolved) {
+          res.status(401).json({ error: 'Invalid or revoked API key' })
+          return
+        }
+        req.wallet = resolved.owner
+        req.authType = 'api_key'
+        req.apiKeyId = resolved.keyId
+        req.apiKeyName = resolved.keyName
+        if (!rateLimitAuthed(req, res)) return
+        next()
+      })
+      .catch((err) => {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Auth error' })
+      })
+    return
+  }
+
+  if (!bearer) {
     res.status(401).json({ error: 'Missing bearer token' })
     return
   }
-  const address = verifyToken(header.slice(7))
+  const address = verifyToken(bearer)
   if (!address) {
     res.status(401).json({ error: 'Invalid or expired token' })
     return
   }
   req.wallet = address
+  req.authType = 'jwt'
+  if (!rateLimitAuthed(req, res)) return
   next()
 }
 

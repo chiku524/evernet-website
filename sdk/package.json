@@ -1,0 +1,41 @@
+{
+  "name": "@evernet/sdk",
+  "version": "0.1.0",
+  "description": "Evernet Storage SDK — wallet-linked encrypted object storage for Stellar",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "example:encrypt-upload": "tsx examples/encrypt-upload.ts"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "@stellar/stellar-sdk": "^16.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@stellar/stellar-sdk": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@stellar/stellar-sdk": "^16.2.0",
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  },
+  "license": "MIT"
+}

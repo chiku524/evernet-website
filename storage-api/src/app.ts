@@ -20,8 +20,10 @@ import {
   registerObjectOnChain,
 } from './soroban.js'
 import { normalizeFolderPath } from './paths.js'
+import { createApiKey, listApiKeys, revokeApiKey } from './apikeys.js'
 import { openApiSpec } from './openapi.js'
 import { publicObject, publicObjects } from './publicMeta.js'
+import { REQUESTS_PER_MINUTE, rateLimit } from './ratelimit.js'
 import {
   createFolder,
   deleteFolder,
@@ -87,6 +89,7 @@ app.use((_req, res, next) => {
 })
 app.use(cors({ origin: allowedOrigin }))
 app.use(express.json({ limit: '2mb' }))
+app.use(rateLimit)
 
 app.get('/', (_req, res) => {
   res.json({
@@ -142,6 +145,65 @@ app.get('/profile', requireWallet, async (req: AuthedRequest, res) => {
     res.json(await getMergedProfile(req.wallet!))
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Profile error' })
+  }
+})
+
+app.get('/usage', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    const profile = await getMergedProfile(req.wallet!)
+    res.json({
+      profile,
+      auth: {
+        type: req.authType || 'jwt',
+        keyId: req.apiKeyId,
+        keyName: req.apiKeyName,
+      },
+      limits: { requestsPerMinute: REQUESTS_PER_MINUTE },
+    })
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Usage error' })
+  }
+})
+
+app.get('/keys', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    if (req.authType === 'api_key') {
+      res.status(403).json({ error: 'Manage API keys with a wallet session, not an API key' })
+      return
+    }
+    res.json({ keys: await listApiKeys(req.wallet!) })
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'List keys failed' })
+  }
+})
+
+app.post('/keys', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    if (req.authType === 'api_key') {
+      res.status(403).json({ error: 'Create API keys with a wallet session, not an API key' })
+      return
+    }
+    const created = await createApiKey(req.wallet!, String(req.body?.name || 'default'))
+    res.status(201).json(created)
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Create key failed' })
+  }
+})
+
+app.delete('/keys/:id', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    if (req.authType === 'api_key') {
+      res.status(403).json({ error: 'Revoke API keys with a wallet session, not an API key' })
+      return
+    }
+    const ok = await revokeApiKey(req.wallet!, String(req.params.id))
+    if (!ok) {
+      res.status(404).json({ error: 'Key not found' })
+      return
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Revoke key failed' })
   }
 })
 

@@ -16,6 +16,8 @@ const toc = [
   { id: 'security', label: 'Security' },
   { id: 'api', label: 'Developer API' },
   { id: 'api-auth', label: 'API authentication' },
+  { id: 'sdk', label: 'TypeScript SDK' },
+  { id: 'api-keys', label: 'API keys' },
   { id: 'api-reference', label: 'API reference' },
   { id: 'api-examples', label: 'API examples' },
   { id: 'api-cors', label: 'CORS & access' },
@@ -328,29 +330,68 @@ export default function Docs() {
 
           <section id="api-auth">
             <h2>API authentication</h2>
-            <p>
-              Auth is wallet-native (SEP-10 style). There are no API keys in v1 — the caller proves control of a Stellar{' '}
-              <code>G…</code> address, then uses a short-lived JWT.
-            </p>
+            <p>Two modes, both authorize as a Stellar wallet’s vault:</p>
             <ol className="docs-steps">
               <li>
-                <code>POST /auth/challenge</code> with <code>{`{ "address": "G…" }`}</code> → receive challenge XDR +
-                network passphrase.
+                <strong>Wallet JWT</strong> — <code>POST /auth/challenge</code> → sign XDR (do not submit) →{' '}
+                <code>POST /auth/verify</code> → <code>Authorization: Bearer &lt;jwt&gt;</code> (~24h).
               </li>
               <li>
-                Sign the XDR with the user’s wallet (<strong>do not submit</strong> — sequence 0, never funds-moving).
-              </li>
-              <li>
-                <code>POST /auth/verify</code> with <code>{`{ "address", "signedTransaction" }`}</code> →{' '}
-                <code>{`{ "token", "address" }`}</code>.
-              </li>
-              <li>
-                Send <code>Authorization: Bearer &lt;token&gt;</code> on subsequent requests (tokens expire ~24h).
+                <strong>API key</strong> — create from the vault (wallet session), then{' '}
+                <code>Authorization: Bearer evn_live_…</code> or <code>X-Evernet-Api-Key</code>. Keys share the wallet’s
+                quota; create/revoke requires a JWT, not another key.
               </li>
             </ol>
+          </section>
+
+          <section id="sdk">
+            <h2>TypeScript SDK</h2>
             <p>
-              Server-side integrations typically collect the signature in the browser (or a wallet SDK), then call the
-              API from your backend with the JWT.
+              Package <code>@evernet/sdk</code> wraps auth, folders, quota, and the canonical encrypt → upload → hash
+              path. Source lives in this repo under <code>sdk/</code>.
+            </p>
+            <pre className="docs-code">
+              <code>{`import { EvernetClient, walletPassphrase } from '@evernet/sdk'
+
+const client = new EvernetClient({
+  baseUrl: '${API_BASE}',
+})
+
+// Wallet signs the challenge (never submit the tx)
+await client.loginWithSigner(address, async (xdr, network) => signWithWallet(xdr, network))
+
+// Encrypt client-side → put ciphertext → content hash (+ optional Soroban registrationTx)
+const { object } = await client.encryptAndUpload({
+  data: new TextEncoder().encode('secret notes'),
+  name: 'notes.txt',
+  mimeType: 'text/plain',
+  folder: 'docs',
+  passphrase: walletPassphrase(address), // prefer a strong user secret in production
+})
+
+console.log(object.hash, object.registrationTx)
+
+const plain = await client.downloadAndDecrypt(object.hash, walletPassphrase(address))`}</code>
+            </pre>
+            <p>
+              Runnable example:{' '}
+              <code>npm run sdk:example -- {API_BASE}</code>
+            </p>
+          </section>
+
+          <section id="api-keys">
+            <h2>API keys</h2>
+            <p>
+              Open the <Link to="/dashboard">vault</Link>, deselect any file/folder so the protocol panel shows, then
+              create a key under <strong>Developer API keys</strong>. The secret is shown once.
+            </p>
+            <pre className="docs-code">
+              <code>{`curl -s ${API_BASE}/usage \\
+  -H "Authorization: Bearer $EVERNET_API_KEY"`}</code>
+            </pre>
+            <p>
+              Metering today: wallet quota (<code>usedBytes</code> / <code>quotaBytes</code>) plus soft rate limits (
+              <code>X-RateLimit-*</code> headers, ~120 req/min per identity). Project-level billing pools are next.
             </p>
           </section>
 
@@ -436,6 +477,26 @@ export default function Docs() {
                     </td>
                     <td>Bearer</td>
                     <td>Quota, used, lease, object count</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>GET</code>
+                    </td>
+                    <td>
+                      <code>/usage</code>
+                    </td>
+                    <td>Bearer</td>
+                    <td>Profile + auth type + rate-limit metadata</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>GET/POST/DELETE</code>
+                    </td>
+                    <td>
+                      <code>/keys</code>
+                    </td>
+                    <td>JWT</td>
+                    <td>Create / list / revoke API keys</td>
                   </tr>
                   <tr>
                     <td>
@@ -598,8 +659,8 @@ async function upload(token: string, bytes: Blob, name: string, folder = '') {
                 from another domain.
               </li>
               <li>
-                <strong>Roadmap:</strong> project API keys / metering for server agents that shouldn’t hold a user wallet
-                session.
+                <strong>API keys:</strong> available now for server agents (see <a href="#api-keys">API keys</a>).
+                Project-level billing pools remain on the roadmap.
               </li>
             </ul>
           </section>
@@ -649,8 +710,8 @@ async function upload(token: string, bytes: Blob, name: string, folder = '') {
                 <dt>Can my app use Evernet like S3?</dt>
                 <dd>
                   For encrypted object storage tied to a Stellar wallet — yes, via the{' '}
-                  <a href="#api">Developer API</a>. It is not a SQL database or a drop-in AWS SDK. Auth is wallet JWT
-                  today; API keys are on the roadmap.
+                  <a href="#api">Developer API</a> and <a href="#sdk">@evernet/sdk</a>. It is not a SQL database or a
+                  drop-in AWS SDK. Auth: wallet JWT or API keys.
                 </dd>
               </div>
             </dl>

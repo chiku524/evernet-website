@@ -15,7 +15,14 @@ Public HTTP API for wallet-linked encrypted object storage (same surface as the 
 | Human docs | [evernet.tech/docs#api](https://evernet.tech/docs#api) |
 | Health | [`/health`](https://evernet-storage-api.vercel.app/health) |
 
-Auth: SEP-10 style challenge → JWT Bearer. Prefer server-side calls from third-party apps (browser CORS is limited to Evernet / localhost / Vercel previews). Encrypt client-side before `POST /objects`.
+Auth: SEP-10 style challenge → JWT Bearer, or API keys (`evn_live_…`) for servers. Prefer server-side calls from third-party apps (browser CORS is limited to Evernet / localhost / Vercel previews).
+
+**SDK:** [`sdk/`](sdk/) (`@evernet/sdk`) — `encryptAndUpload`, download/decrypt, folders, quota, API keys.
+
+```bash
+npm run sdk:build
+npm run sdk:example -- https://evernet-storage-api.vercel.app
+```
 
 ## Architecture
 
