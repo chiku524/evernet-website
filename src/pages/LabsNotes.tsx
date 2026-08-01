@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { EvernetClient, walletPassphrase } from '@evernet/sdk'
+import { EvernetClient, walletPassphrase } from 'evernet-sdk'
 import { apiBase, clearSession, hasSession, loginWithWallet, sessionAddress } from '../lib/api'
 import {
   loadPreferredNetwork,
@@ -182,7 +182,7 @@ export default function LabsNotes() {
         <p className="eyebrow">Labs</p>
         <h1>Encrypted notes</h1>
         <p className="labs-lead">
-          A minimal dApp on <code>@evernet/sdk</code>: connect a wallet, encrypt a note in-browser, upload ciphertext,
+          A minimal dApp on <code>evernet-sdk</code>: connect a wallet, encrypt a note in-browser, upload ciphertext,
           and reopen with your passphrase. Same vault as the dashboard (<code>{FOLDER}</code>).
         </p>
 

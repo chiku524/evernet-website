@@ -1,5 +1,5 @@
 {
-  "name": "@evernet/sdk",
+  "name": "evernet-sdk",
   "version": "0.1.0",
   "description": "Evernet Storage SDK — wallet-linked encrypted object storage for Stellar",
   "type": "module",
@@ -31,9 +31,6 @@
     "encryption",
     "soroban"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

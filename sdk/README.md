@@ -1,11 +1,11 @@
-# @evernet/sdk
+# evernet-sdk
 
 TypeScript client for the [Evernet Storage API](https://evernet.tech/docs#api) — wallet-linked, client-encrypted object storage on Stellar.
 
 ## Install
 
 ```bash
-npm install @evernet/sdk
+npm install evernet-sdk
 # optional peer for challenge signing in Node:
 npm install @stellar/stellar-sdk
 ```
@@ -13,7 +13,7 @@ npm install @stellar/stellar-sdk
 ## Encrypt → upload → hash
 
 ```ts
-import { EvernetClient, walletPassphrase } from '@evernet/sdk'
+import { EvernetClient, walletPassphrase } from 'evernet-sdk'
 
 const client = new EvernetClient({
   baseUrl: 'https://evernet-storage-api.vercel.app',
@@ -53,16 +53,13 @@ cd sdk && npm install && npm run build
 npm run example:encrypt-upload
 ```
 
-## Publish to npm
+## Publish
 
 ```bash
 npm login
 cd sdk
-npm publish --access public
+npm publish
 ```
 
-Requires access to the `@evernet` org on npm (create the org once at https://www.npmjs.com/org/create).
-If the scope is unavailable, rename `"name"` in `package.json` to `evernet-sdk` and publish unscoped.
-
-Docs: https://evernet.tech/docs#sdk · OpenAPI: https://evernet-storage-api.vercel.app/openapi.json
-· Reference app: https://evernet.tech/labs/notes
+Docs: https://evernet.tech/docs#sdk · OpenAPI: https://evernet-storage-api.vercel.app/openapi.json  
+Reference app: https://evernet.tech/labs/notes

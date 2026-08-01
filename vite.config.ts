@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@evernet/sdk': path.resolve(root, 'sdk/src/index.ts'),
+      'evernet-sdk': path.resolve(root, 'sdk/src/index.ts'),
     },
   },
   define: {

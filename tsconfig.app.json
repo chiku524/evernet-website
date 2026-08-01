@@ -16,7 +16,7 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "paths": {
-      "@evernet/sdk": ["./sdk/src/index.ts"]
+      "evernet-sdk": ["./sdk/src/index.ts"]
     },
 
     /* Linting */

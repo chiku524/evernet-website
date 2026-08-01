@@ -350,11 +350,11 @@ export default function Docs() {
           <section id="sdk">
             <h2>TypeScript SDK</h2>
             <p>
-              Package <code>@evernet/sdk</code> wraps auth, folders, quota, and the canonical encrypt → upload → hash
+              Package <code>evernet-sdk</code> wraps auth, folders, quota, and the canonical encrypt → upload → hash
               path. Source lives in this repo under <code>sdk/</code>.
             </p>
             <pre className="docs-code">
-              <code>{`import { EvernetClient, walletPassphrase } from '@evernet/sdk'
+              <code>{`import { EvernetClient, walletPassphrase } from 'evernet-sdk'
 
 const client = new EvernetClient({
   baseUrl: '${API_BASE}',
@@ -381,9 +381,7 @@ const plain = await client.downloadAndDecrypt(object.hash, walletPassphrase(addr
               <code>npm run sdk:example -- {API_BASE}</code>
             </p>
             <p>
-              Package source: <code>sdk/</code>. Publish when ready:{' '}
-              <code>cd sdk && npm publish --access public</code> (requires npm login + rights to the{' '}
-              <code>@evernet</code> scope, or rename to <code>evernet-sdk</code>).
+              Install: <code>npm install evernet-sdk</code>. Source: <code>sdk/</code>.
             </p>
           </section>
 
@@ -771,7 +769,7 @@ async function upload(token: string, bytes: Blob, name: string, folder = '') {
                 <dt>Can my app use Evernet like S3?</dt>
                 <dd>
                   For encrypted object storage tied to a Stellar wallet — yes, via the{' '}
-                  <a href="#api">Developer API</a> and <a href="#sdk">@evernet/sdk</a>. It is not a SQL database or a
+                  <a href="#api">Developer API</a> and <a href="#sdk">evernet-sdk</a>. It is not a SQL database or a
                   drop-in AWS SDK. Auth: wallet JWT or API keys.
                 </dd>
               </div>
