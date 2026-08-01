@@ -114,6 +114,22 @@ export default function Dashboard() {
   const folderInputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
 
+  function clearDragState() {
+    dragDepth.current = 0
+    setDragging(false)
+  }
+
+  useEffect(() => {
+    const onEnd = () => clearDragState()
+    // Capture phase so folder-row stopPropagation cannot leave the dim overlay stuck.
+    window.addEventListener('dragend', onEnd, true)
+    window.addEventListener('drop', onEnd, true)
+    return () => {
+      window.removeEventListener('dragend', onEnd, true)
+      window.removeEventListener('drop', onEnd, true)
+    }
+  }, [])
+
   const refresh = useCallback(async () => {
     if (!sessionAddress()) {
       setProfile(null)
@@ -280,6 +296,7 @@ export default function Dashboard() {
 
   async function handleUpload(
     fileList: Array<{ file: File; relativeFolder?: string }> | FileList | File[],
+    targetFolder = currentFolder,
   ) {
     if (!authed || !wallet) {
       setToast('Connect a Stellar wallet to upload')
@@ -296,8 +313,8 @@ export default function Dashboard() {
       for (const entry of entries) {
         const relative = normalizeFolderPath(entry.relativeFolder || '')
         const folder = relative
-          ? normalizeFolderPath(currentFolder ? `${currentFolder}/${relative}` : relative)
-          : currentFolder
+          ? normalizeFolderPath(targetFolder ? `${targetFolder}/${relative}` : relative)
+          : normalizeFolderPath(targetFolder)
         const { ciphertext, header } = await encryptFile(entry.file, pass)
         await uploadObject(ciphertext, {
           name: header.name,
@@ -310,7 +327,7 @@ export default function Dashboard() {
       await refresh()
       setToast(
         uploaded === 1
-          ? `Uploaded into ${currentFolder || 'Vault'}`
+          ? `Uploaded into ${targetFolder || 'Vault'}`
           : `Uploaded ${uploaded} encrypted files`,
       )
     } catch (err) {
@@ -673,15 +690,11 @@ export default function Dashboard() {
           onDragLeave={(e) => {
             e.preventDefault()
             dragDepth.current -= 1
-            if (dragDepth.current <= 0) {
-              dragDepth.current = 0
-              setDragging(false)
-            }
+            if (dragDepth.current <= 0) clearDragState()
           }}
           onDrop={(e) => {
             e.preventDefault()
-            dragDepth.current = 0
-            setDragging(false)
+            clearDragState()
             void (async () => {
               const dropped = await filesFromDataTransfer(e.dataTransfer)
               if (dropped.length) await handleUpload(dropped)
@@ -781,17 +794,26 @@ export default function Dashboard() {
                             }}
                             onDoubleClick={() => navigateTo(row.path)}
                             onDragOver={(e) => {
-                              if (e.dataTransfer.types.includes('text/evernet-hash')) {
-                                e.preventDefault()
-                                e.dataTransfer.dropEffect = 'move'
-                              }
+                              e.preventDefault()
+                              e.dataTransfer.dropEffect = e.dataTransfer.types.includes(
+                                'text/evernet-hash',
+                              )
+                                ? 'move'
+                                : 'copy'
                             }}
                             onDrop={(e) => {
-                              const hash = e.dataTransfer.getData('text/evernet-hash')
-                              if (!hash) return
                               e.preventDefault()
                               e.stopPropagation()
-                              void handleMoveObject(hash, row.path)
+                              clearDragState()
+                              const hash = e.dataTransfer.getData('text/evernet-hash')
+                              if (hash) {
+                                void handleMoveObject(hash, row.path)
+                                return
+                              }
+                              void (async () => {
+                                const dropped = await filesFromDataTransfer(e.dataTransfer)
+                                if (dropped.length) await handleUpload(dropped, row.path)
+                              })()
                             }}
                           >
                             <td>
