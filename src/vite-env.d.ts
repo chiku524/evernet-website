@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   readonly VITE_STELLAR_NETWORK?: string
   readonly VITE_STELLAR_RECEIVER?: string
+  readonly VITE_STORAGE_CONTRACT_ID?: string
+  readonly VITE_STORAGE_API_URL?: string
 }
 
 interface ImportMeta {

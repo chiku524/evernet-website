@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "api": "npm --prefix storage-api run dev",
+    "api:start": "npm --prefix storage-api run start",
+    "contract:build": "cd contracts/storage-market && cargo build --target wasm32v1-none --release"
   },
   "dependencies": {
     "@stellar/freighter-api": "^6.0.1",

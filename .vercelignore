@@ -1,0 +1,9 @@
+contracts/**/target
+storage-api/node_modules
+storage-api/data
+storage-api/dist
+storage-api/.vercel
+node_modules
+dist
+.git
+*.local

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
-import { applySuccessfulPayment, listPurchases, type PurchaseRecord } from '../../lib/billing'
-import { formatBytes } from '../../lib/vault'
+import { useEffect, useState } from 'react'
+import { confirmPurchase, loginWithFreighter, sessionAddress } from '../../lib/api'
+import { formatBytes } from '../../lib/format'
 import {
   DEFAULT_RECEIVER,
+  STORAGE_CONTRACT_ID,
   STORAGE_PLANS,
   type StellarNetworkId,
   type StoragePlan,
@@ -20,39 +21,46 @@ type Props = {
   onClose: () => void
   onPurchased: () => void
   showToast: (message: string) => void
+  wallet: string | null
 }
 
-export function BuyStorageModal({ open, onClose, onPurchased, showToast }: Props) {
+export function BuyStorageModal({ open, onClose, onPurchased, showToast, wallet }: Props) {
   const [network, setNetwork] = useState<StellarNetworkId>(() => loadPreferredNetwork())
-  const [address, setAddress] = useState<string | null>(null)
+  const [address, setAddress] = useState<string | null>(wallet)
   const [hasFreighter, setHasFreighter] = useState<boolean | null>(null)
   const [selected, setSelected] = useState<StoragePlan>(STORAGE_PLANS[1])
   const [paying, setPaying] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastTx, setLastTx] = useState<string | null>(null)
-  const purchases = useMemo(() => listPurchases().slice(0, 5), [open, lastTx])
 
   useEffect(() => {
     if (!open) return
     setError(null)
     setNetwork(loadPreferredNetwork())
+    setAddress(wallet || sessionAddress())
     void (async () => {
       setHasFreighter(await isFreighterInstalled())
-      setAddress(await getFreighterAddress())
+      if (!wallet) setAddress(await getFreighterAddress())
     })()
-  }, [open])
+  }, [open, wallet])
 
   if (!open) return null
+
+  async function ensureAuthed(addr: string) {
+    if (sessionAddress() === addr) return
+    await loginWithFreighter(addr)
+  }
 
   async function handleConnect() {
     setConnecting(true)
     setError(null)
     try {
       const addr = await connectFreighter()
+      await ensureAuthed(addr)
       setAddress(addr)
       setHasFreighter(true)
-      showToast('Freighter connected')
+      showToast('Freighter connected · vault session started')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not connect Freighter')
     } finally {
@@ -66,12 +74,17 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast }: Props
     setLastTx(null)
     try {
       savePreferredNetwork(network)
-      const result = await purchaseStoragePlan(selected, network)
-      const record: PurchaseRecord = applySuccessfulPayment(result)
-      setLastTx(result.explorerUrl)
-      setAddress(result.from)
+      const addr = address || (await connectFreighter())
+      await ensureAuthed(addr)
+      setAddress(addr)
+
+      const payment = await purchaseStoragePlan(selected, network)
+      const credited = await confirmPurchase(selected.id, payment.hash)
+      setLastTx(credited.explorerUrl)
       onPurchased()
-      showToast(`Purchased ${record.planName}: +${formatBytes(record.bytes)} via Stellar`)
+      showToast(
+        `On-chain credit: +${formatBytes(selected.bytes)} (${credited.profile.source || 'profile'})`,
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed')
     } finally {
@@ -85,7 +98,7 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast }: Props
       <div className="pay-modal">
         <header className="pay-head">
           <div>
-            <p className="pay-eyebrow">Stellar payments</p>
+            <p className="pay-eyebrow">Stellar + Soroban</p>
             <h2 id="pay-title">Buy storage with XLM</h2>
           </div>
           <button type="button" className="pay-close" onClick={onClose} aria-label="Close">
@@ -94,8 +107,8 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast }: Props
         </header>
 
         <p className="pay-lead">
-          Pay the Evernet treasury on the Stellar network. Freighter signs a native XLM payment; quota unlocks after
-          Horizon confirms the transaction.
+          Pay the Evernet treasury on Stellar. After Horizon confirms, the storage API credits your wallet’s Soroban
+          profile (lease + quota).
         </p>
 
         <div className="pay-network" role="group" aria-label="Stellar network">
@@ -116,7 +129,7 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast }: Props
 
         <div className="pay-wallet">
           <div>
-            <strong>Wallet</strong>
+            <strong>Wallet profile</strong>
             <p>
               {address ? (
                 <>
@@ -130,7 +143,7 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast }: Props
                   </a>
                 </>
               ) : (
-                'Connect Freighter to continue'
+                'Connect Freighter to bind storage to your address'
               )}
             </p>
           </div>
@@ -162,6 +175,10 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast }: Props
             <code title={DEFAULT_RECEIVER}>{shortenAddress(DEFAULT_RECEIVER)}</code>
           </div>
           <div>
+            <span>Contract</span>
+            <code title={STORAGE_CONTRACT_ID}>{shortenAddress(STORAGE_CONTRACT_ID)}</code>
+          </div>
+          <div>
             <span>You pay</span>
             <strong>
               {selected.priceXlm} XLM · {network === 'public' ? 'Mainnet' : 'Testnet'}
@@ -172,44 +189,21 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast }: Props
         {error && <p className="pay-error">{error}</p>}
         {lastTx && (
           <p className="pay-success">
-            Payment confirmed.{' '}
+            Payment confirmed & quota credited.{' '}
             <a href={lastTx} target="_blank" rel="noreferrer">
               View on StellarExpert
             </a>
           </p>
         )}
 
-        <button
-          type="button"
-          className="dash-btn primary pay-cta"
-          disabled={paying}
-          onClick={() => void handlePay()}
-        >
-          {paying ? 'Confirm in Freighter…' : `Pay ${selected.priceXlm} XLM for +${formatBytes(selected.bytes)}`}
+        <button type="button" className="dash-btn primary pay-cta" disabled={paying} onClick={() => void handlePay()}>
+          {paying ? 'Pay & credit on Soroban…' : `Pay ${selected.priceXlm} XLM for +${formatBytes(selected.bytes)}`}
         </button>
-
-        {purchases.length > 0 && (
-          <div className="pay-history">
-            <p className="pay-history-label">Recent purchases</p>
-            <ul>
-              {purchases.map((p) => (
-                <li key={p.hash}>
-                  <span>
-                    {p.planName} · +{formatBytes(p.bytes)} · {p.amountXlm} XLM
-                  </span>
-                  <a href={p.explorerUrl} target="_blank" rel="noreferrer">
-                    Tx
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
 
         <p className="pay-footnote">
           {network === 'testnet'
-            ? 'Testnet uses Friendbot-funded treasury & free test XLM from Freighter/Friendbot.'
-            : 'Mainnet spends real XLM. Ensure Freighter is on Public Network and the treasury account is funded.'}
+            ? 'Testnet: Friendbot treasury + free test XLM. Quota is written to the Evernet Soroban contract and mirrored by the storage API.'
+            : 'Mainnet spends real XLM. Fund the treasury and set Freighter to Public Network first.'}
         </p>
       </div>
     </div>

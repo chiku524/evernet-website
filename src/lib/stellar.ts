@@ -21,10 +21,13 @@ export type StoragePlan = {
 
 const GB = 1024 * 1024 * 1024
 
-/** Evernet storage treasury — replace via VITE_STELLAR_RECEIVER */
 export const DEFAULT_RECEIVER =
   import.meta.env.VITE_STELLAR_RECEIVER?.trim() ||
   'GCUBXGWBBJ4I276JPFQMBJIB5ZR4RJOV47C3YRWZHWITVQXJQKCW72D7'
+
+export const STORAGE_CONTRACT_ID =
+  import.meta.env.VITE_STORAGE_CONTRACT_ID?.trim() ||
+  'CBWJEDHDK2UBMF4UXLWIANQ3I6CZ4IRFZPSS2257GZL53TD46LNLEQGO'
 
 export const STORAGE_PLANS: StoragePlan[] = [
   {
@@ -133,6 +136,10 @@ export async function getFreighterAddress(): Promise<string | null> {
   }
 }
 
+export async function disconnectFreighterLocal() {
+  saveAddress(null)
+}
+
 export async function ensureReceiverFunded(network: StellarNetworkId, receiver = DEFAULT_RECEIVER) {
   const cfg = getNetworkConfig(network)
   const server = new Horizon.Server(cfg.horizonUrl)
@@ -154,7 +161,6 @@ export async function ensureReceiverFunded(network: StellarNetworkId, receiver =
 }
 
 function buildMemo(planId: string, buyer: string): string {
-  // Horizon text memos max 28 bytes
   const shortBuyer = buyer.slice(-6)
   const stamp = Date.now().toString(36).slice(-6)
   return `EVN:${planId}:${shortBuyer}:${stamp}`.slice(0, 28)
@@ -171,6 +177,7 @@ export type PaymentResult = {
   amount: string
 }
 
+/** Build + sign + submit XLM payment. Quota credit happens via storage API / Soroban. */
 export async function purchaseStoragePlan(
   plan: StoragePlan,
   network: StellarNetworkId,
@@ -184,7 +191,6 @@ export async function purchaseStoragePlan(
 
   const address = await connectFreighter()
 
-  // Ensure wallet is on the expected network
   const net = await freighterApi.getNetworkDetails()
   if (net.error) throw new Error(net.error)
   if (net.networkPassphrase && net.networkPassphrase !== cfg.passphrase) {

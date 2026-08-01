@@ -1,0 +1,29 @@
+app = "evernet-storage-api"
+primary_region = "iad"
+
+[build]
+
+[env]
+  PORT = "8787"
+  STELLAR_NETWORK = "testnet"
+  STELLAR_RECEIVER = "GCUBXGWBBJ4I276JPFQMBJIB5ZR4RJOV47C3YRWZHWITVQXJQKCW72D7"
+  STORAGE_CONTRACT_ID = "CBWJEDHDK2UBMF4UXLWIANQ3I6CZ4IRFZPSS2257GZL53TD46LNLEQGO"
+  CORS_ORIGIN = "https://evernet.tech,https://www.evernet.tech,https://evernet-website-mauve.vercel.app,http://localhost:5173"
+  DATA_DIR = "/data"
+  BLOB_DIR = "/data/blobs"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[mounts]
+  source = "evernet_data"
+  destination = "/data"

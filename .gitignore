@@ -13,7 +13,13 @@ dist-ssr
 *.local
 .vercel
 .treasury-secret.local
+.admin-secret.local
 .env
+storage-api/.env
+storage-api/data/
+storage-api/.vercel/
+contracts/**/target/
+contracts/.stellar/
 
 # Editor directories and files
 .vscode/*
