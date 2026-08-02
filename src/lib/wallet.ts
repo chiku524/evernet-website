@@ -34,10 +34,7 @@ const EVERNET_THEME: SwkAppTheme = {
 }
 
 const WC_ID = 'wallet_connect'
-const WC_JUST_CONNECTED_KEY = 'evernet-wc-just-connected'
-const WC_PENDING_AUTH_KEY = 'evernet-wc-pending-auth'
 const WC_SIGN_TIMEOUT_MS = 120_000
-const WC_SETTLE_MS = 2_200
 
 function kitNetwork(network: StellarNetworkId): KitNetworks {
   return network === 'public' ? KitNetworks.PUBLIC : KitNetworks.TESTNET
@@ -97,39 +94,8 @@ async function hydrateWalletConnectSessions(mod: ModuleInterface): Promise<void>
   wcSessionPaths.value = paths
 }
 
-function markWalletConnectJustConnected(address: string) {
-  try {
-    sessionStorage.setItem(WC_JUST_CONNECTED_KEY, '1')
-    sessionStorage.setItem(WC_PENDING_AUTH_KEY, JSON.stringify({ address, at: Date.now() }))
-  } catch {
-    /* private mode */
-  }
-}
-
 export function clearWalletConnectPendingAuth() {
-  try {
-    sessionStorage.removeItem(WC_JUST_CONNECTED_KEY)
-    sessionStorage.removeItem(WC_PENDING_AUTH_KEY)
-  } catch {
-    /* ignore */
-  }
-}
-
-export function peekWalletConnectPendingAuth(): { address: string; at: number } | null {
-  try {
-    const raw = sessionStorage.getItem(WC_PENDING_AUTH_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as { address?: string; at?: number }
-    if (!parsed.address || !parsed.at) return null
-    // Challenges expire in 5 minutes; keep a slightly shorter resume window
-    if (Date.now() - parsed.at > 4 * 60 * 1000) {
-      clearWalletConnectPendingAuth()
-      return null
-    }
-    return { address: parsed.address, at: parsed.at }
-  } catch {
-    return null
-  }
+  /* kept for Dashboard disconnect call sites — no pending-auth resume anymore */
 }
 
 export function isWalletConnectSelected(): boolean {
@@ -166,20 +132,11 @@ async function walletConnectModule(network: StellarNetworkId): Promise<ModuleInt
           : [WalletConnectTargetChain.TESTNET, WalletConnectTargetChain.PUBLIC],
     }) as unknown as ModuleInterface
 
-    // Patch signTransaction for LOBSTR settle delay + response-shape + timeout.
+    // Patch signTransaction for response-shape normalization + timeout (no auto-retry).
     const originalSign = mod.signTransaction.bind(mod)
     mod.signTransaction = async (xdr: string, opts?: { address?: string; networkPassphrase?: string }) => {
       await waitForWalletConnectReady(mod)
       await hydrateWalletConnectSessions(mod)
-
-      let justConnected = false
-      try {
-        justConnected = sessionStorage.getItem(WC_JUST_CONNECTED_KEY) === '1'
-        if (justConnected) sessionStorage.removeItem(WC_JUST_CONNECTED_KEY)
-      } catch {
-        /* ignore */
-      }
-      if (justConnected) await sleep(WC_SETTLE_MS)
 
       const result = await withTimeout(
         originalSign(xdr, opts),
@@ -291,11 +248,8 @@ export async function connectWallet(network: StellarNetworkId): Promise<string> 
       await waitForWalletConnectReady(walletConnectInstance)
     }
     const { address } = await StellarWalletsKit.authModal()
-    if (isWalletConnectSelected()) {
-      markWalletConnectJustConnected(address)
-      if (walletConnectInstance) {
-        await hydrateWalletConnectSessions(walletConnectInstance).catch(() => undefined)
-      }
+    if (isWalletConnectSelected() && walletConnectInstance) {
+      await hydrateWalletConnectSessions(walletConnectInstance).catch(() => undefined)
     }
     return address
   } catch (err) {

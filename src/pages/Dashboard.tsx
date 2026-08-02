@@ -68,7 +68,6 @@ import {
   isWalletConnectSelected,
   isWalletInAppBrowser,
   openWalletProfile,
-  peekWalletConnectPendingAuth,
   restoreWallet,
   walletConnectConfigured,
 } from '../lib/wallet'
@@ -232,26 +231,10 @@ export default function Dashboard() {
           clearSession()
           setAuthed(false)
         }
-      } else if (peekWalletConnectPendingAuth()) {
-        // Tab may have reloaded while LOBSTR was approving the auth signature.
-        void resumeWalletConnectAuth()
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh])
-
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void resumeWalletConnectAuth()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    window.addEventListener('pageshow', onVisible)
-    return () => {
-      document.removeEventListener('visibilitychange', onVisible)
-      window.removeEventListener('pageshow', onVisible)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, busy, network])
 
   useEffect(() => {
     if (!toast) return
@@ -366,42 +349,28 @@ export default function Dashboard() {
     )
   }
 
-  async function finishAuth(addr: string) {
-    setWallet(addr)
-    saveAddress(addr)
-    if (isWalletConnectSelected()) {
-      setToast(
-        'Approve the Evernet sign-in in LOBSTR — stay on ≡ → WalletConnect until it completes, then return here',
-      )
-    }
-    await loginWithWallet(addr, network)
-    await refresh()
-    setToast('Wallet profile linked on Evernet')
-  }
-
   async function connectAndAuth() {
+    if (busy) return
     setBusy(true)
     try {
       const addr = await connectWallet(network)
-      await finishAuth(addr)
+      setWallet(addr)
+      saveAddress(addr)
+      if (hasSession(addr)) {
+        await refresh()
+        setToast('Wallet profile linked on Evernet')
+        return
+      }
+      if (isWalletConnectSelected()) {
+        setToast(
+          'One more step: approve the Evernet sign-in in LOBSTR (≡ → WalletConnect), then return here',
+        )
+      }
+      await loginWithWallet(addr, network)
+      await refresh()
+      setToast('Wallet profile linked on Evernet')
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Connect failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  /** Resume SEP-10 sign-in if the tab was backgrounded during a WalletConnect approval. */
-  async function resumeWalletConnectAuth() {
-    if (authed || busy) return
-    const pending = peekWalletConnectPendingAuth()
-    if (!pending) return
-    setBusy(true)
-    try {
-      const addr = (await restoreWallet(network)) || pending.address
-      await finishAuth(addr)
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : 'Could not finish WalletConnect sign-in')
     } finally {
       setBusy(false)
     }

@@ -1,5 +1,5 @@
 import type { StellarNetworkId } from './stellar'
-import { clearWalletConnectPendingAuth, signTransactionXdr } from './wallet'
+import { signTransactionXdr } from './wallet'
 
 const TOKEN_KEY = 'evernet-api-token'
 const ADDR_KEY = 'evernet-api-address'
@@ -93,6 +93,9 @@ export async function fetchPublicConfig() {
   }>('/config/public')
 }
 
+/** Prevents overlapping SEP-10 logins (WalletConnect must not enqueue a second sign). */
+let loginInFlight: Promise<string> | null = null
+
 /**
  * SEP-10 style login: the API hands back an unsubmittable sequence-0
  * transaction and the wallet signs it. Every Stellar wallet can sign a
@@ -102,23 +105,31 @@ export async function loginWithWallet(
   address: string,
   network: StellarNetworkId,
 ): Promise<string> {
-  const challenge = await api<{ transaction: string; network: string }>('/auth/challenge', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address }),
+  if (hasSession(address)) return address
+  if (loginInFlight) return loginInFlight
+
+  loginInFlight = (async () => {
+    const challenge = await api<{ transaction: string; network: string }>('/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address }),
+    })
+
+    const signedTransaction = await signTransactionXdr(challenge.transaction, address, network)
+
+    const result = await api<{ token: string; address: string }>('/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address, signedTransaction }),
+    })
+    localStorage.setItem(TOKEN_KEY, result.token)
+    localStorage.setItem(ADDR_KEY, result.address)
+    return result.address
+  })().finally(() => {
+    loginInFlight = null
   })
 
-  const signedTransaction = await signTransactionXdr(challenge.transaction, address, network)
-
-  const result = await api<{ token: string; address: string }>('/auth/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address, signedTransaction }),
-  })
-  localStorage.setItem(TOKEN_KEY, result.token)
-  localStorage.setItem(ADDR_KEY, result.address)
-  clearWalletConnectPendingAuth()
-  return result.address
+  return loginInFlight
 }
 
 export function hasSession(address: string): boolean {
