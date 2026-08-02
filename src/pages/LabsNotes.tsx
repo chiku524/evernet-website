@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { EvernetClient, walletPassphrase } from 'evernet-sdk'
+import BrandMark from '../components/BrandMark'
 import { apiBase, clearSession, hasSession, loginWithWallet, sessionAddress } from '../lib/api'
 import {
   loadPreferredNetwork,
@@ -168,6 +169,7 @@ export default function LabsNotes() {
       <header className="labs-top">
         <div className="container labs-top-inner">
           <Link to="/" className="labs-brand">
+            <BrandMark className="brand-mark" size={24} />
             Evernet
           </Link>
           <nav className="labs-nav">

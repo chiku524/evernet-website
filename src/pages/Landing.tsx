@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
 import { NetworkCanvas } from '../components/NetworkCanvas'
+import BrandMark from '../components/BrandMark'
 
 const fadeUp = {
   hidden: { opacity: 0, y: 28 },
@@ -186,6 +187,7 @@ export default function Landing() {
       <header className="nav">
         <div className="container nav-inner">
           <a className="nav-brand" href="#top">
+            <BrandMark className="brand-mark" size={26} />
             Evernet
           </a>
           <nav className="nav-links" aria-label="Primary">

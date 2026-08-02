@@ -3,6 +3,7 @@ import { DEFAULT_RECEIVER, STORAGE_CONTRACT_ID, STORAGE_PLANS } from '../lib/ste
 import { WALLET_CATALOGUE } from '../lib/wallet'
 import { formatBytes } from '../lib/format'
 import { apiBase } from '../lib/api'
+import BrandMark from '../components/BrandMark'
 
 const tocGuide = [
   { id: 'overview', label: 'What is Evernet?' },
@@ -43,6 +44,7 @@ export default function Docs() {
       <header className="docs-top">
         <div className="container docs-top-inner">
           <Link to="/" className="docs-brand">
+            <BrandMark className="brand-mark" size={24} />
             Evernet
           </Link>
           <nav className="docs-top-nav" aria-label="Site">

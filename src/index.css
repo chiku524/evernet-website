@@ -127,11 +127,19 @@ p {
 }
 
 .nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 1.2rem;
   letter-spacing: -0.03em;
   color: var(--white);
+}
+
+.brand-mark {
+  flex-shrink: 0;
+  color: inherit;
 }
 
 .nav-links {

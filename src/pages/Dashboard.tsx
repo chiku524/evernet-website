@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Link } from 'react-router-dom'
 import { BuyStorageModal } from '../components/dashboard/BuyStorageModal'
 import { PassphraseModal } from '../components/dashboard/PassphraseModal'
+import BrandMark from '../components/BrandMark'
 import {
   type ApiKeyInfo,
   type ApiObject,
@@ -804,6 +805,7 @@ export default function Dashboard() {
     <div className="dash" onClick={() => setMenuOpen(false)}>
       <aside className={`dash-sidebar ${menuOpen ? 'open' : ''}`} onClick={(e) => e.stopPropagation()}>
         <Link to="/" className="dash-brand">
+          <BrandMark className="brand-mark" size={24} />
           Evernet
         </Link>
         <p className="dash-side-label">Wallet vault</p>

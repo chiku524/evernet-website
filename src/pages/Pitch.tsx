@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
+import BrandMark from '../components/BrandMark'
 
 const ACCESS_CODE = (import.meta.env.VITE_PITCH_ACCESS_CODE || '').trim()
 const GATE_KEY = 'evernet-pitch-ok'
@@ -118,6 +119,7 @@ export default function Pitch() {
 
       <header className="pitch-nav">
         <Link to="/" className="pitch-brand">
+          <BrandMark className="brand-mark" size={24} />
           Evernet
         </Link>
         <div className="pitch-nav-meta">
