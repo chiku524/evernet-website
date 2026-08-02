@@ -63,8 +63,11 @@ import {
 import {
   connectWallet,
   disconnectWallet,
+  isMobileClient,
+  isWalletInAppBrowser,
   openWalletProfile,
   restoreWallet,
+  walletConnectConfigured,
 } from '../lib/wallet'
 
 function Icon({ kind }: { kind: ReturnType<typeof fileIconKind> | 'folder' }) {
@@ -142,6 +145,9 @@ export default function Dashboard() {
   const [projectMaxGb, setProjectMaxGb] = useState('')
   const [passOpen, setPassOpen] = useState(false)
   const [passReason, setPassReason] = useState<'unlock' | 'retry'>('unlock')
+  const [mobileClient] = useState(() => isMobileClient())
+  const [inAppWallet] = useState(() => isWalletInAppBrowser())
+  const wcEnabled = walletConnectConfigured()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
@@ -994,16 +1000,21 @@ export default function Dashboard() {
               <div className="dash-empty">
                 <h2>Your storage is tied to your Stellar wallet</h2>
                 <p>
-                  Connect Freighter, LOBSTR, xBull, Albedo, Hana, Rabet or any other supported Stellar wallet to load the
-                  Soroban storage profile for that address. Files are encrypted in-browser, stored on the Evernet API,
-                  and registered on-chain.
+                  {mobileClient && !inAppWallet
+                    ? 'On a phone browser, extension wallets like Freighter desktop are not available. Connect with LOBSTR, Albedo, or xBull — or open evernet.tech inside your wallet’s in-app browser.'
+                    : 'Connect Freighter, LOBSTR, xBull, Albedo, Hana, Rabet or any other supported Stellar wallet to load the Soroban storage profile for that address. Files are encrypted in-browser, stored on the Evernet API, and registered on-chain.'}
                 </p>
                 <button type="button" className="dash-btn primary" disabled={busy} onClick={() => void connectAndAuth()}>
                   {busy ? 'Connecting…' : 'Connect wallet'}
                 </button>
                 <p className="dash-empty-hint">
-                  On a phone? Open evernet.tech inside your wallet’s in-app browser, or pick LOBSTR / xBull in the
-                  connect dialog.
+                  {inAppWallet
+                    ? 'Wallet in-app browser detected — pick your installed wallet in the connect dialog.'
+                    : mobileClient
+                      ? wcEnabled
+                        ? 'Prefer LOBSTR / Albedo / xBull, or scan with WalletConnect from the dialog.'
+                        : 'Best path: open this site in LOBSTR, Freighter, or xBull. WalletConnect QR is not configured on this deploy yet.'
+                      : 'On a phone? Open evernet.tech inside your wallet’s in-app browser, or pick LOBSTR / xBull / Albedo in the connect dialog.'}
                 </p>
                 {apiOnline === false && (
                   <p className="dash-empty-error">

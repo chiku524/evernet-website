@@ -392,6 +392,68 @@ p {
   font-size: 1.05rem;
 }
 
+/* —— Partners —— */
+.partners-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15.5rem, 1fr));
+  gap: 1.75rem 2rem;
+  margin-top: 0.5rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.partner-link {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr;
+  gap: 1rem;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+  min-height: 3.5rem;
+}
+
+.partner-link:hover strong {
+  color: var(--foam-deep);
+}
+
+.partner-logo-wrap {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+.partner-logo {
+  max-width: 3.25rem;
+  max-height: 3.25rem;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.partner-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.partner-meta strong {
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.partner-meta span {
+  font-size: 0.92rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.footer-partners {
+  max-width: 42rem;
+}
+
 .strategy-steps {
   display: grid;
   gap: 0;

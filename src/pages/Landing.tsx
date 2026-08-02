@@ -143,6 +143,39 @@ const funding = [
   { label: 'Project management and reporting', pct: 5 },
 ]
 
+const partners = [
+  {
+    name: 'SigeaCloud',
+    href: 'https://sigeacloud.io',
+    logo: '/partners/sigeacloud.png',
+    blurb: 'Intuitive web & mobile storage experiences',
+  },
+  {
+    name: 'Obsideo',
+    href: 'https://obsideo.io',
+    logo: '/partners/obsideo.png',
+    blurb: 'Storage distribution & network reach',
+  },
+  {
+    name: 'Era Digitalis',
+    href: 'https://eradigitalis.de',
+    logo: '/partners/eradigitalis.svg',
+    blurb: 'Digital infrastructure & services',
+  },
+  {
+    name: 'Peridot',
+    href: 'https://peridot.finance',
+    logo: '/partners/peridot.png',
+    blurb: 'On-chain finance on Stellar and beyond',
+  },
+  {
+    name: 'Indikin',
+    href: 'https://indikin.online',
+    logo: '/partners/indikin.png',
+    blurb: 'Community platforms & digital products',
+  },
+] as const
+
 export default function Landing() {
   const reduce = useReducedMotion()
 
@@ -155,6 +188,7 @@ export default function Landing() {
           </a>
           <nav className="nav-links" aria-label="Primary">
             <a href="#solution">Product</a>
+            <a href="#partners">Partners</a>
             <a href="#strategy">Strategy</a>
             <a href="#stellar">Stellar</a>
             <Link to="/docs">Docs</Link>
@@ -255,6 +289,40 @@ export default function Landing() {
               real-world data sovereignty.
             </p>
           </Reveal>
+        </div>
+      </section>
+
+      <section className="section partners" id="partners">
+        <div className="container">
+          <Reveal className="section-head">
+            <p className="eyebrow">Partners</p>
+            <h2>Building with teams across the ecosystem.</h2>
+            <p>
+              Evernet collaborates with storage, finance, and digital product partners who share the goal of
+              wallet-native, user-owned infrastructure.
+            </p>
+          </Reveal>
+          <div className="partners-grid" role="list">
+            {partners.map((partner, i) => (
+              <Reveal key={partner.name} delay={i * 0.05}>
+                <a
+                  className="partner-link"
+                  href={partner.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  role="listitem"
+                >
+                  <span className="partner-logo-wrap" aria-hidden="true">
+                    <img src={partner.logo} alt="" className="partner-logo" loading="lazy" />
+                  </span>
+                  <span className="partner-meta">
+                    <strong>{partner.name}</strong>
+                    <span>{partner.blurb}</span>
+                  </span>
+                </a>
+              </Reveal>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -419,19 +487,16 @@ export default function Landing() {
           </Reveal>
           <footer className="footer">
             <span>Evernet · Business strategy · July 2026</span>
-            <span>
-              Live products:{' '}
-              <a href="https://evernet.io" target="_blank" rel="noreferrer">
-                Evernet.io
-              </a>
-              {' · '}
-              <a href="https://obsideo.io" target="_blank" rel="noreferrer">
-                Obsideo
-              </a>
-              {' · '}
-              <a href="https://sigeacloud.io" target="_blank" rel="noreferrer">
-                SigeaCloud
-              </a>
+            <span className="footer-partners">
+              Partners:{' '}
+              {partners.map((p, i) => (
+                <span key={p.name}>
+                  {i > 0 ? ' · ' : null}
+                  <a href={p.href} target="_blank" rel="noreferrer">
+                    {p.name}
+                  </a>
+                </span>
+              ))}
             </span>
           </footer>
         </div>

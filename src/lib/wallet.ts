@@ -146,7 +146,18 @@ export async function connectWallet(network: StellarNetworkId): Promise<string> 
     const { address } = await StellarWalletsKit.authModal()
     return address
   } catch (err) {
-    throw kitError(err, 'Wallet connection cancelled')
+    const base = kitError(err, 'Wallet connection cancelled')
+    if (isMobileClient() && !isWalletInAppBrowser() && !walletConnectConfigured()) {
+      throw new Error(
+        `${base.message} On mobile, open evernet.tech inside LOBSTR / Freighter / xBull, or pick Albedo / LOBSTR in the dialog. WalletConnect QR is not enabled on this deploy yet.`,
+      )
+    }
+    if (isMobileClient() && !isWalletInAppBrowser()) {
+      throw new Error(
+        `${base.message} Tip: use LOBSTR, Albedo, or xBull — or open this site in your wallet’s in-app browser.`,
+      )
+    }
+    throw base
   }
 }
 
@@ -220,4 +231,31 @@ export function onWalletStateChange(
   return StellarWalletsKit.on(KitEventType.STATE_UPDATED, (event) => {
     callback(event.payload.address)
   })
+}
+
+export function isMobileClient(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  if (/Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return true
+  try {
+    return window.matchMedia('(max-width: 820px) and (pointer: coarse)').matches
+  } catch {
+    return false
+  }
+}
+
+/** True when Evernet was opened inside a wallet’s embedded browser (injected provider). */
+export function isWalletInAppBrowser(): boolean {
+  if (typeof window === 'undefined') return false
+  const w = window as Window & {
+    freighter?: unknown
+    stellar?: unknown
+    xBullSDK?: unknown
+    hanaWallet?: unknown
+  }
+  return Boolean(w.freighter || w.stellar || w.xBullSDK || w.hanaWallet)
+}
+
+export function walletConnectConfigured(): boolean {
+  return Boolean(import.meta.env.VITE_WALLETCONNECT_PROJECT_ID?.trim())
 }

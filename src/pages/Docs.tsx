@@ -192,6 +192,12 @@ export default function Docs() {
               Whichever route you take, the vault is keyed to the Stellar address — the same wallet on desktop and mobile
               opens the same files.
             </p>
+            <p>
+              <strong>WalletConnect status:</strong>{' '}
+              {import.meta.env.VITE_WALLETCONNECT_PROJECT_ID?.trim()
+                ? 'Enabled on this build (QR pairing available in the connect dialog).'
+                : 'Not configured on this deploy. Set VITE_WALLETCONNECT_PROJECT_ID (Reown / WalletConnect Cloud) to add QR pairing for mobile wallets that are not opened as an in-app browser.'}
+            </p>
           </section>
 
           <section id="networks">
