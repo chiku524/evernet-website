@@ -1,5 +1,5 @@
 import type { StellarNetworkId } from './stellar'
-import { signTransactionXdr } from './wallet'
+import { clearWalletConnectPendingAuth, signTransactionXdr } from './wallet'
 
 const TOKEN_KEY = 'evernet-api-token'
 const ADDR_KEY = 'evernet-api-address'
@@ -117,6 +117,7 @@ export async function loginWithWallet(
   })
   localStorage.setItem(TOKEN_KEY, result.token)
   localStorage.setItem(ADDR_KEY, result.address)
+  clearWalletConnectPendingAuth()
   return result.address
 }
 

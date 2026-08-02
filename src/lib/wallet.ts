@@ -33,12 +33,112 @@ const EVERNET_THEME: SwkAppTheme = {
   'font-family': "'Source Sans 3', 'Segoe UI', sans-serif",
 }
 
+const WC_ID = 'wallet_connect'
+const WC_JUST_CONNECTED_KEY = 'evernet-wc-just-connected'
+const WC_PENDING_AUTH_KEY = 'evernet-wc-pending-auth'
+const WC_SIGN_TIMEOUT_MS = 120_000
+const WC_SETTLE_MS = 2_200
+
 function kitNetwork(network: StellarNetworkId): KitNetworks {
   return network === 'public' ? KitNetworks.PUBLIC : KitNetworks.TESTNET
 }
 
 let initialized = false
 let initializedNetwork: StellarNetworkId | null = null
+let walletConnectInstance: ModuleInterface | null = null
+
+type WcSessionPath = { publicKey: string; topic: string }
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), ms)
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        window.clearTimeout(timer)
+        reject(err)
+      },
+    )
+  })
+}
+
+async function waitForWalletConnectReady(mod: ModuleInterface, attempts = 40): Promise<void> {
+  for (let i = 0; i < attempts; i += 1) {
+    if (await mod.isAvailable().catch(() => false)) return
+    await sleep(100)
+  }
+  throw new Error('WalletConnect is still starting — wait a moment and try again')
+}
+
+/** Rebuild kit session paths from live SignClient sessions (survives tab freezes). */
+async function hydrateWalletConnectSessions(mod: ModuleInterface): Promise<void> {
+  const anyMod = mod as ModuleInterface & {
+    getSessions?: () => Promise<Array<{ topic: string; namespaces?: { stellar?: { accounts?: string[] } } }>>
+  }
+  if (!anyMod.getSessions) return
+  await waitForWalletConnectReady(mod)
+  const sessions = await anyMod.getSessions()
+  const paths: WcSessionPath[] = []
+  for (const session of sessions || []) {
+    for (const account of session.namespaces?.stellar?.accounts || []) {
+      const publicKey = account.split(':')[2]
+      if (publicKey && session.topic) paths.push({ publicKey, topic: session.topic })
+    }
+  }
+  if (!paths.length) return
+  const { wcSessionPaths } = await import('@creit.tech/stellar-wallets-kit/state')
+  wcSessionPaths.value = paths
+}
+
+function markWalletConnectJustConnected(address: string) {
+  try {
+    sessionStorage.setItem(WC_JUST_CONNECTED_KEY, '1')
+    sessionStorage.setItem(WC_PENDING_AUTH_KEY, JSON.stringify({ address, at: Date.now() }))
+  } catch {
+    /* private mode */
+  }
+}
+
+export function clearWalletConnectPendingAuth() {
+  try {
+    sessionStorage.removeItem(WC_JUST_CONNECTED_KEY)
+    sessionStorage.removeItem(WC_PENDING_AUTH_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+export function peekWalletConnectPendingAuth(): { address: string; at: number } | null {
+  try {
+    const raw = sessionStorage.getItem(WC_PENDING_AUTH_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { address?: string; at?: number }
+    if (!parsed.address || !parsed.at) return null
+    // Challenges expire in 5 minutes; keep a slightly shorter resume window
+    if (Date.now() - parsed.at > 4 * 60 * 1000) {
+      clearWalletConnectPendingAuth()
+      return null
+    }
+    return { address: parsed.address, at: parsed.at }
+  } catch {
+    return null
+  }
+}
+
+export function isWalletConnectSelected(): boolean {
+  try {
+    return localStorage.getItem(LocalStorageKeys.selectedModuleId) === WC_ID
+  } catch {
+    return false
+  }
+}
 
 /**
  * WalletConnect needs a Reown project id and pulls in a large dependency tree,
@@ -51,7 +151,7 @@ async function walletConnectModule(network: StellarNetworkId): Promise<ModuleInt
     const { WalletConnectModule, WalletConnectTargetChain } = await import(
       '@creit.tech/stellar-wallets-kit/modules/wallet-connect'
     )
-    return new WalletConnectModule({
+    const mod = new WalletConnectModule({
       projectId,
       metadata: {
         name: 'Evernet',
@@ -59,12 +159,45 @@ async function walletConnectModule(network: StellarNetworkId): Promise<ModuleInt
         url: window.location.origin,
         icons: [`${window.location.origin}/favicon.svg`],
       },
-      allowedChains: [
+      // Advertise both so LOBSTR can attach; prefer the active Evernet network first.
+      allowedChains:
         network === 'public'
-          ? WalletConnectTargetChain.PUBLIC
-          : WalletConnectTargetChain.TESTNET,
-      ],
+          ? [WalletConnectTargetChain.PUBLIC, WalletConnectTargetChain.TESTNET]
+          : [WalletConnectTargetChain.TESTNET, WalletConnectTargetChain.PUBLIC],
     }) as unknown as ModuleInterface
+
+    // Patch signTransaction for LOBSTR settle delay + response-shape + timeout.
+    const originalSign = mod.signTransaction.bind(mod)
+    mod.signTransaction = async (xdr: string, opts?: { address?: string; networkPassphrase?: string }) => {
+      await waitForWalletConnectReady(mod)
+      await hydrateWalletConnectSessions(mod)
+
+      let justConnected = false
+      try {
+        justConnected = sessionStorage.getItem(WC_JUST_CONNECTED_KEY) === '1'
+        if (justConnected) sessionStorage.removeItem(WC_JUST_CONNECTED_KEY)
+      } catch {
+        /* ignore */
+      }
+      if (justConnected) await sleep(WC_SETTLE_MS)
+
+      const result = await withTimeout(
+        originalSign(xdr, opts),
+        WC_SIGN_TIMEOUT_MS,
+        'LOBSTR did not return the signature. In LOBSTR open ≡ → WalletConnect, stay on that screen, then try Connect again.',
+      )
+
+      const anyResult = result as { signedTxXdr?: string; signedXDR?: string; xdr?: string }
+      const signedTxXdr = anyResult.signedTxXdr || anyResult.signedXDR || anyResult.xdr
+      if (!signedTxXdr) {
+        throw new Error(
+          'WalletConnect returned an empty signature. Disconnect Evernet in LOBSTR’s WalletConnect list and connect again.',
+        )
+      }
+      return { signedTxXdr }
+    }
+
+    return mod
   } catch (err) {
     console.warn('WalletConnect module unavailable', err)
     return null
@@ -77,12 +210,18 @@ export async function initWalletKit(network: StellarNetworkId): Promise<void> {
       StellarWalletsKit.setNetwork(kitNetwork(network))
       initializedNetwork = network
     }
+    if (walletConnectInstance) {
+      await hydrateWalletConnectSessions(walletConnectInstance).catch(() => undefined)
+    }
     return
   }
 
   const modules: ModuleInterface[] = defaultModules()
   const wc = await walletConnectModule(network)
-  if (wc) modules.push(wc)
+  if (wc) {
+    modules.push(wc)
+    walletConnectInstance = wc
+  }
 
   StellarWalletsKit.init({
     modules,
@@ -91,6 +230,11 @@ export async function initWalletKit(network: StellarNetworkId): Promise<void> {
     selectedWalletId: localStorage.getItem(LocalStorageKeys.selectedModuleId) || undefined,
     authModal: { showInstallLabel: true },
   })
+
+  if (walletConnectInstance) {
+    await waitForWalletConnectReady(walletConnectInstance).catch(() => undefined)
+    await hydrateWalletConnectSessions(walletConnectInstance).catch(() => undefined)
+  }
 
   initialized = true
   initializedNetwork = network
@@ -143,7 +287,16 @@ function kitError(err: unknown, fallback: string): Error {
 export async function connectWallet(network: StellarNetworkId): Promise<string> {
   await initWalletKit(network)
   try {
+    if (walletConnectInstance) {
+      await waitForWalletConnectReady(walletConnectInstance)
+    }
     const { address } = await StellarWalletsKit.authModal()
+    if (isWalletConnectSelected()) {
+      markWalletConnectJustConnected(address)
+      if (walletConnectInstance) {
+        await hydrateWalletConnectSessions(walletConnectInstance).catch(() => undefined)
+      }
+    }
     return address
   } catch (err) {
     const base = kitError(err, 'Wallet connection cancelled')
@@ -173,6 +326,7 @@ export async function restoreWallet(network: StellarNetworkId): Promise<string |
 }
 
 export async function disconnectWallet(): Promise<void> {
+  clearWalletConnectPendingAuth()
   try {
     await StellarWalletsKit.disconnect()
   } catch {
@@ -195,6 +349,9 @@ export async function signTransactionXdr(
 ): Promise<string> {
   await initWalletKit(network)
   try {
+    if (isWalletConnectSelected() && walletConnectInstance) {
+      await hydrateWalletConnectSessions(walletConnectInstance)
+    }
     const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr, {
       address,
       networkPassphrase: getNetworkConfig(network).passphrase,
@@ -202,7 +359,13 @@ export async function signTransactionXdr(
     if (!signedTxXdr) throw new Error('Wallet returned an empty signature')
     return signedTxXdr
   } catch (err) {
-    throw kitError(err, 'Wallet declined the signature')
+    const base = kitError(err, 'Wallet declined the signature')
+    if (isWalletConnectSelected()) {
+      throw new Error(
+        `${base.message} For LOBSTR: keep ≡ → WalletConnect open while signing, then return to this tab.`,
+      )
+    }
+    throw base
   }
 }
 
