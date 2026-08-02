@@ -153,3 +153,36 @@ export async function abortMultipartSession(owner: string, uploadId: string): Pr
 export async function cleanupMultipartSession(owner: string, uploadId: string): Promise<void> {
   await abortMultipartSession(owner, uploadId)
 }
+
+function multipartOwnerDir(owner: string): string {
+  return `v1/multipart/${pathId(owner)}`
+}
+
+/** List incomplete multipart sessions for an owner. */
+export async function listMultipartSessions(owner: string): Promise<MultipartSession[]> {
+  const keys = await driver.listKeys(multipartOwnerDir(owner))
+  const sessionKeys = keys.filter((k) => k.endsWith('.json') && !k.includes('/part-'))
+  const sessions: MultipartSession[] = []
+  for (const key of sessionKeys) {
+    const session = await driver.getJson<MultipartSession>(key)
+    if (session?.owner === owner && session.uploadId) sessions.push(session)
+  }
+  return sessions
+}
+
+/** Abort sessions whose createdAt is older than cutoffMs ago. Returns aborted uploadIds. */
+export async function abortMultipartOlderThan(
+  owner: string,
+  maxAgeMs: number,
+): Promise<string[]> {
+  const cutoff = Date.now() - maxAgeMs
+  const sessions = await listMultipartSessions(owner)
+  const aborted: string[] = []
+  for (const session of sessions) {
+    if (session.createdAt <= cutoff) {
+      const ok = await abortMultipartSession(owner, session.uploadId)
+      if (ok) aborted.push(session.uploadId)
+    }
+  }
+  return aborted
+}

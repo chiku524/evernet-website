@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto'
 import { config } from './config.js'
 import { driver, pathId, randomKey } from './blobstore.js'
-
-const VAULT_REV_KEEP = 12
+import { objectKey } from './objectKey.js'
 import {
   childSegment,
   isUnderFolder,
@@ -11,12 +10,28 @@ import {
   parentFolder,
 } from './paths.js'
 
+const VAULT_REV_KEEP = 12
+
 export type Profile = {
   address: string
   quotaBytes: number
   usedBytes: number
   leaseExpires: number
   objectCount: number
+}
+
+export type VersioningStatus = 'Disabled' | 'Enabled' | 'Suspended'
+
+export type LifecycleRule = {
+  id: string
+  enabled: boolean
+  prefix: string
+  /** Expire latest non–delete-marker after this many days. */
+  expirationDays?: number
+  /** Permanently delete noncurrent versions after this many days. */
+  noncurrentDays?: number
+  /** Abort incomplete multipart uploads older than this many days. */
+  abortMultipartDays?: number
 }
 
 export type StoredObjectMeta = {
@@ -38,16 +53,26 @@ export type StoredObjectMeta = {
   projectId?: string
   /** Soft-deleted (trash). Blob retained until hard delete or purge. */
   deletedAt?: number
+  /** S3-style version id (= content hash for byte versions; synthetic for delete markers). */
+  versionId: string
+  /** Latest version for this key (including delete markers). */
+  isLatest: boolean
+  /** Tombstone version when versioning is Enabled. */
+  isDeleteMarker?: boolean
 }
 
 /** Soft-deleted objects are retained this long before automatic purge. */
 export const TRASH_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
-type VaultLedger = {
+export type VaultLedger = {
   owner: string
   folders: string[]
   objects: Record<string, StoredObjectMeta>
   updatedAt: number
+  versioning?: VersioningStatus
+  lifecycleRules?: LifecycleRule[]
+  /** Last time lifecycle runner completed for this vault. */
+  lifecycleLastRunAt?: number
 }
 
 const PREFIX = 'v1'
@@ -84,21 +109,115 @@ function withFolder(meta: StoredObjectMeta): StoredObjectMeta {
 }
 
 function emptyVault(owner: string): VaultLedger {
-  return { owner, folders: [], objects: {}, updatedAt: 0 }
-}
-
-function normalizeVault(owner: string, existing: VaultLedger): VaultLedger {
   return {
     owner,
-    folders: [...new Set((existing.folders || []).map((f) => normalizeFolderPath(f)).filter(Boolean))],
-    objects: Object.fromEntries(
-      Object.entries(existing.objects || {}).map(([hash, meta]) => [hash, withFolder(meta)]),
-    ),
-    updatedAt: existing.updatedAt || 0,
+    folders: [],
+    objects: {},
+    updatedAt: 0,
+    versioning: 'Disabled',
+    lifecycleRules: [],
   }
 }
 
-async function latestVaultRevision(owner: string): Promise<VaultLedger | null> {
+/** Ensure versionId/isLatest exist; recompute isLatest per key when missing. */
+function migrateVersionFields(
+  objects: Record<string, StoredObjectMeta>,
+): { objects: Record<string, StoredObjectMeta>; changed: boolean } {
+  let changed = false
+  const mapped: Record<string, StoredObjectMeta> = {}
+  for (const [hash, raw] of Object.entries(objects || {})) {
+    const meta = withFolder(raw as StoredObjectMeta)
+    const versionId = meta.versionId || meta.hash || hash
+    const next: StoredObjectMeta = {
+      ...meta,
+      hash: meta.hash || hash,
+      versionId,
+      isLatest: meta.isLatest ?? true,
+      isDeleteMarker: meta.isDeleteMarker,
+    }
+    if (!raw.versionId || raw.isLatest === undefined) changed = true
+    mapped[next.hash] = next
+  }
+
+  const byKey = new Map<string, StoredObjectMeta[]>()
+  for (const obj of Object.values(mapped)) {
+    if (obj.deletedAt) continue
+    const key = objectKey(obj)
+    const list = byKey.get(key) || []
+    list.push(obj)
+    byKey.set(key, list)
+  }
+  for (const group of byKey.values()) {
+    if (group.length <= 1) {
+      const only = group[0]
+      if (only && only.isLatest !== true) {
+        mapped[only.hash] = { ...only, isLatest: true }
+        changed = true
+      }
+      continue
+    }
+    const hasExplicit = group.some((o) => o.isLatest === true)
+    if (hasExplicit) {
+      // Ensure at most one latest
+      const sorted = [...group].sort((a, b) => b.createdAt - a.createdAt)
+      let seen = false
+      for (const o of sorted) {
+        const want = !seen && o.isLatest
+        if (o.isLatest) seen = true
+        if (o.isLatest !== want) {
+          mapped[o.hash] = { ...o, isLatest: want }
+          changed = true
+        }
+      }
+      if (!seen) {
+        const newest = sorted[0]
+        mapped[newest.hash] = { ...newest, isLatest: true }
+        for (const o of sorted.slice(1)) {
+          if (o.isLatest) {
+            mapped[o.hash] = { ...mapped[o.hash], isLatest: false }
+          }
+        }
+        changed = true
+      }
+      continue
+    }
+    const newest = [...group].sort((a, b) => b.createdAt - a.createdAt)[0]
+    for (const o of group) {
+      const want = o.hash === newest.hash
+      if (o.isLatest !== want) {
+        mapped[o.hash] = { ...o, isLatest: want }
+        changed = true
+      }
+    }
+  }
+  return { objects: mapped, changed }
+}
+
+function normalizeVault(owner: string, existing: VaultLedger): {
+  vault: VaultLedger
+  migrated: boolean
+} {
+  const { objects, changed } = migrateVersionFields(existing.objects || {})
+  const versioning = existing.versioning || 'Disabled'
+  const lifecycleRules = existing.lifecycleRules || []
+  const migrated = changed || !existing.versioning || !existing.lifecycleRules
+  return {
+    vault: {
+      owner,
+      folders: [
+        ...new Set((existing.folders || []).map((f) => normalizeFolderPath(f)).filter(Boolean)),
+      ],
+      objects,
+      updatedAt: existing.updatedAt || 0,
+      versioning,
+      lifecycleRules,
+      lifecycleLastRunAt: existing.lifecycleLastRunAt,
+    },
+    migrated,
+  }
+}
+
+async function latestVaultRevision(owner: string): Promise<{ vault: VaultLedger; migrated: boolean } | null> {
   const keys = (await driver.listKeys(vaultDir(owner)))
     .filter((key) => /\/rev-\d{15}-[a-f0-9]+\.json$/i.test(key))
     .sort()
@@ -125,11 +244,14 @@ async function pruneVaultRevisions(owner: string): Promise<void> {
 
 async function loadVault(owner: string): Promise<VaultLedger> {
   const fromRevisions = await latestVaultRevision(owner)
-  if (fromRevisions) return fromRevisions
+  if (fromRevisions) {
+    if (fromRevisions.migrated) await saveVault(fromRevisions.vault)
+    return fromRevisions.vault
+  }
 
   const legacySingle = await driver.getJson<VaultLedger>(legacyVaultKey(owner))
   if (legacySingle?.objects) {
-    const vault = normalizeVault(owner, legacySingle)
+    const { vault } = normalizeVault(owner, legacySingle)
     await saveVault(vault)
     return vault
   }
@@ -144,7 +266,11 @@ async function loadVault(owner: string): Promise<VaultLedger> {
   const vault = emptyVault(owner)
   for (const meta of legacyObjects) {
     if (meta.owner !== owner || !meta.hash) continue
-    vault.objects[meta.hash] = withFolder(meta)
+    vault.objects[meta.hash] = withFolder({
+      ...meta,
+      versionId: meta.versionId || meta.hash,
+      isLatest: meta.isLatest ?? true,
+    })
   }
   for (const folder of legacyBook?.folders || []) {
     const normalized = normalizeFolderPath(folder)
@@ -158,8 +284,9 @@ async function loadVault(owner: string): Promise<VaultLedger> {
     }
   }
   vault.folders.sort()
-  await saveVault(vault)
-  return vault
+  const { vault: migrated } = normalizeVault(owner, vault)
+  await saveVault(migrated)
+  return migrated
 }
 
 async function saveVault(vault: VaultLedger): Promise<void> {
@@ -201,6 +328,11 @@ export async function setProfile(profile: Profile): Promise<void> {
 export type ListObjectsOpts = {
   /** default: active only · true: active+trash · 'only': trash only */
   trash?: boolean | 'only'
+  /**
+   * default true: only latest non–delete-marker (current object listing).
+   * false: all versions (including noncurrent + delete markers).
+   */
+  latestOnly?: boolean
 }
 
 function isTrashed(obj: StoredObjectMeta): boolean {
@@ -212,10 +344,21 @@ export async function listObjects(
   opts: ListObjectsOpts = {},
 ): Promise<StoredObjectMeta[]> {
   await purgeExpiredTrash(owner).catch(() => undefined)
+  // Lazy lifecycle — dynamic import avoids circular init with lifecycle.ts
+  try {
+    const { applyLifecycle } = await import('./lifecycle.js')
+    await applyLifecycle(owner)
+  } catch {
+    /* best-effort */
+  }
   const vault = await loadVault(owner)
   let rows = Object.values(vault.objects)
   if (opts.trash === 'only') rows = rows.filter(isTrashed)
   else if (opts.trash !== true) rows = rows.filter((o) => !isTrashed(o))
+  const latestOnly = opts.latestOnly !== false
+  if (latestOnly && opts.trash !== 'only') {
+    rows = rows.filter((o) => o.isLatest && !o.isDeleteMarker)
+  }
   return rows.sort((a, b) => b.createdAt - a.createdAt)
 }
 
@@ -364,12 +507,198 @@ export async function registerObjectLocal(meta: StoredObjectMeta): Promise<Profi
   profile.usedBytes += meta.size
   profile.objectCount += 1
 
-  const stored: StoredObjectMeta = { ...meta, folder, name }
+  const stored: StoredObjectMeta = {
+    ...meta,
+    folder,
+    name,
+    versionId: meta.versionId || meta.hash,
+    isLatest: meta.isLatest ?? true,
+  }
   vault.objects[stored.hash] = stored
   if (folder) rememberFolder(vault, folder)
   await saveVault(vault)
   await setProfile(profile)
   return profile
+}
+
+export async function getVersioning(owner: string): Promise<VersioningStatus> {
+  const vault = await loadVault(owner)
+  return vault.versioning || 'Disabled'
+}
+
+export async function setVersioning(owner: string, status: VersioningStatus): Promise<VersioningStatus> {
+  if (status !== 'Disabled' && status !== 'Enabled' && status !== 'Suspended') {
+    throw new Error('Invalid versioning status')
+  }
+  const vault = await loadVault(owner)
+  vault.versioning = status
+  await saveVault(vault)
+  return status
+}
+
+export async function getLifecycleRules(owner: string): Promise<LifecycleRule[]> {
+  const vault = await loadVault(owner)
+  return vault.lifecycleRules || []
+}
+
+export async function setLifecycleRules(
+  owner: string,
+  rules: LifecycleRule[],
+): Promise<LifecycleRule[]> {
+  if (!Array.isArray(rules)) throw new Error('rules must be an array')
+  if (rules.length > 100) throw new Error('At most 100 lifecycle rules')
+  const normalized: LifecycleRule[] = rules.map((r, i) => {
+    const id = String(r.id || `rule-${i + 1}`).slice(0, 64)
+    const prefix = String(r.prefix || '').replace(/^\/+/, '')
+    if (prefix.includes('..')) throw new Error('Invalid lifecycle prefix')
+    const rule: LifecycleRule = {
+      id,
+      enabled: r.enabled !== false,
+      prefix,
+    }
+    if (r.expirationDays != null) {
+      const d = Number(r.expirationDays)
+      if (!Number.isFinite(d) || d < 1) throw new Error('expirationDays must be >= 1')
+      rule.expirationDays = Math.floor(d)
+    }
+    if (r.noncurrentDays != null) {
+      const d = Number(r.noncurrentDays)
+      if (!Number.isFinite(d) || d < 1) throw new Error('noncurrentDays must be >= 1')
+      rule.noncurrentDays = Math.floor(d)
+    }
+    if (r.abortMultipartDays != null) {
+      const d = Number(r.abortMultipartDays)
+      if (!Number.isFinite(d) || d < 1) throw new Error('abortMultipartDays must be >= 1')
+      rule.abortMultipartDays = Math.floor(d)
+    }
+    return rule
+  })
+  const vault = await loadVault(owner)
+  vault.lifecycleRules = normalized
+  await saveVault(vault)
+  return normalized
+}
+
+/** Demote all latest versions for a key (active only). */
+export async function demoteLatestForKey(
+  owner: string,
+  folder: string,
+  name: string,
+): Promise<void> {
+  const vault = await loadVault(owner)
+  const f = normalizeFolderPath(folder)
+  const n = normalizeFileName(name)
+  let changed = false
+  for (const [hash, obj] of Object.entries(vault.objects)) {
+    if (obj.deletedAt) continue
+    if (normalizeFolderPath(obj.folder || '') !== f) continue
+    if (normalizeFileName(obj.name) !== n) continue
+    if (!obj.isLatest) continue
+    vault.objects[hash] = { ...obj, isLatest: false }
+    changed = true
+  }
+  if (changed) await saveVault(vault)
+}
+
+/** Create a delete-marker version as the new latest for a key. */
+export async function createDeleteMarker(
+  owner: string,
+  folder: string,
+  name: string,
+  projectId?: string,
+): Promise<StoredObjectMeta> {
+  await demoteLatestForKey(owner, folder, name)
+  const versionId = `dm-${randomKey()}`
+  const meta: StoredObjectMeta = {
+    hash: versionId,
+    versionId,
+    owner,
+    name: normalizeFileName(name),
+    folder: normalizeFolderPath(folder),
+    mimeType: 'application/x-evernet-delete-marker',
+    size: 0,
+    encrypted: false,
+    createdAt: Date.now(),
+    shards: 0,
+    blobRef: '',
+    isLatest: true,
+    isDeleteMarker: true,
+    projectId,
+  }
+  await registerObjectLocal(meta)
+  return meta
+}
+
+/** Set a version as latest for its key (delete markers allowed for internal repair). */
+export async function setLatestVersion(
+  owner: string,
+  key: string,
+  versionId: string,
+): Promise<StoredObjectMeta> {
+  const vault = await loadVault(owner)
+  const target = Object.values(vault.objects).find(
+    (o) =>
+      !o.deletedAt &&
+      objectKey(o) === key &&
+      (o.versionId === versionId || o.hash === versionId),
+  )
+  if (!target) throw new Error('Version not found')
+
+  const f = normalizeFolderPath(target.folder)
+  const n = normalizeFileName(target.name)
+  for (const [hash, obj] of Object.entries(vault.objects)) {
+    if (obj.deletedAt) continue
+    if (normalizeFolderPath(obj.folder || '') !== f) continue
+    if (normalizeFileName(obj.name) !== n) continue
+    vault.objects[hash] = { ...obj, isLatest: hash === target.hash }
+  }
+  await saveVault(vault)
+  return vault.objects[target.hash]
+}
+
+/** Promote an existing non–delete-marker version to latest. */
+export async function restoreVersionLocal(
+  owner: string,
+  key: string,
+  versionId: string,
+): Promise<StoredObjectMeta> {
+  const vault = await loadVault(owner)
+  const target = Object.values(vault.objects).find(
+    (o) =>
+      !o.deletedAt &&
+      objectKey(o) === key &&
+      (o.versionId === versionId || o.hash === versionId),
+  )
+  if (!target) throw new Error('Version not found')
+  if (target.isDeleteMarker) throw new Error('Cannot restore a delete marker')
+  return setLatestVersion(owner, key, versionId)
+}
+
+export async function getObjectByVersion(
+  owner: string,
+  key: string,
+  versionId: string,
+): Promise<StoredObjectMeta | null> {
+  const vault = await loadVault(owner)
+  return (
+    Object.values(vault.objects).find(
+      (o) =>
+        !o.deletedAt &&
+        objectKey(o) === key &&
+        (o.versionId === versionId || o.hash === versionId),
+    ) ?? null
+  )
+}
+
+/** Internal: load vault for lifecycle runner. */
+export async function loadVaultForLifecycle(owner: string): Promise<VaultLedger> {
+  return loadVault(owner)
+}
+
+export async function markLifecycleRun(owner: string, at = Date.now()): Promise<void> {
+  const vault = await loadVault(owner)
+  vault.lifecycleLastRunAt = at
+  await saveVault(vault)
 }
 
 export async function patchObjectMeta(
@@ -452,7 +781,9 @@ export async function deleteObjectLocal(owner: string, hash: string): Promise<Pr
 
   delete vault.objects[hash]
   await saveVault(vault)
-  await driver.delBytes(meta.blobRef).catch(() => undefined)
+  if (meta.blobRef && !meta.isDeleteMarker) {
+    await driver.delBytes(meta.blobRef).catch(() => undefined)
+  }
   await setProfile(profile)
   return profile
 }

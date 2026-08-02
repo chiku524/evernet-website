@@ -401,8 +401,8 @@ export default function Docs() {
             <p>
               Toward wallet-native cloud storage on Stellar, Evernet exposes a JSON <strong>S3-shaped</strong> surface
               under <code>/s3/v1</code> (not full AWS XML compatibility yet). Same vault, auth, quota, and encryption
-              model — with keys, multipart, ranged GET, HEAD/copy, soft-delete trash, batch delete, presigned downloads,
-              and revocable share grants.
+              model — with keys, multipart, ranged GET, HEAD/copy, opt-in versioning, lifecycle rules, soft-delete trash,
+              batch delete, presigned downloads, and revocable share grants.
             </p>
             <div className="docs-table-wrap">
               <table className="docs-table">
@@ -450,21 +450,51 @@ export default function Docs() {
                     </td>
                   </tr>
                   <tr>
-                    <td>Delete / trash</td>
+                    <td>Versioning</td>
                     <td>
-                      <code>DELETE /s3/v1/object?key=…</code>
+                      <code>GET|PUT /s3/v1/versioning</code>
                     </td>
                     <td>
-                      Soft-delete (30d); <code>?permanent=true</code> hard-deletes
+                      Opt-in <code>Enabled</code> / <code>Suspended</code> / <code>Disabled</code>; versions count
+                      against quota
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>List versions</td>
+                    <td>
+                      <code>GET /s3/v1/versions?prefix=</code>
+                    </td>
+                    <td>
+                      Includes noncurrent + delete markers; <code>versionId</code> = content hash
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Lifecycle</td>
+                    <td>
+                      <code>GET|PUT /s3/v1/lifecycle</code>
+                    </td>
+                    <td>
+                      Prefix rules: <code>expirationDays</code>, <code>noncurrentDays</code>,{' '}
+                      <code>abortMultipartDays</code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Delete / trash</td>
+                    <td>
+                      <code>DELETE /s3/v1/object?key=&amp;versionId=</code>
+                    </td>
+                    <td>
+                      Versioning on → delete marker; else soft-delete (30d);{' '}
+                      <code>?versionId=</code> purges that version
                     </td>
                   </tr>
                   <tr>
                     <td>Restore</td>
                     <td>
-                      <code>POST /s3/v1/restore</code>
+                      <code>POST /s3/v1/restore</code> · <code>POST /s3/v1/restore-version</code>
                     </td>
                     <td>
-                      Body <code>key</code> or <code>hash</code> — requires free quota
+                      Trash restore, or promote a prior <code>versionId</code> to latest
                     </td>
                   </tr>
                   <tr>
@@ -508,6 +538,16 @@ curl -X PUT "${API_BASE}/s3/v1/object?key=docs/report.bin" \\
   -H "X-Evernet-Encrypted: true" \\
   --data-binary @ciphertext.bin
 
+curl -X PUT ${API_BASE}/s3/v1/versioning \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"status":"Enabled"}'
+
+curl -X PUT ${API_BASE}/s3/v1/lifecycle \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"rules":[{"id":"docs","enabled":true,"prefix":"docs/","noncurrentDays":30,"expirationDays":365,"abortMultipartDays":7}]}'
+
 curl -X POST ${API_BASE}/s3/v1/presign \\
   -H "Authorization: Bearer $TOKEN" \\
   -H "Content-Type: application/json" \\
@@ -522,10 +562,9 @@ curl -X POST ${API_BASE}/s3/v1/presign \\
               <a href={`${API_BASE}/status`} target="_blank" rel="noreferrer">
                 {`${API_BASE}/status`}
               </a>
-              . SDK helpers: <code>s3Put</code>, <code>s3Get</code>, <code>s3Head</code>, <code>s3Copy</code>,{' '}
-              <code>s3Delete</code>, <code>s3Restore</code>, <code>s3DeleteBatch</code>, <code>s3MultipartPut</code>,{' '}
-              <code>s3Presign</code>, <code>s3CreateGrant</code>, <code>getStatus</code>. Install{' '}
-              <code>evernet-sdk@0.4.0</code>+.
+              . SDK helpers: <code>setVersioning</code>, <code>setLifecycle</code>, <code>s3ListVersions</code>,{' '}
+              <code>s3RestoreVersion</code>, <code>s3Put</code>/<code>s3Get</code>/<code>s3Delete</code>,{' '}
+              <code>getStatus</code>. Install <code>evernet-sdk@0.5.0</code>+.
             </p>
           </section>
 
@@ -988,7 +1027,9 @@ async function upload(token: string, bytes: Blob, name: string, folder = '') {
                   For encrypted object storage tied to a Stellar wallet — yes, via the{' '}
                   <a href="#cloud">S3-shaped API</a>, <a href="#api">Developer API</a>, and{' '}
                   <a href="#sdk">evernet-sdk</a>. It is not a SQL database or a drop-in AWS SDK. Auth: wallet JWT or API
-                  keys; optional project soft caps for metering. Deletes soft-trash for 30 days by default.
+                  keys; optional project soft caps for metering. Deletes soft-trash for 30 days by default (or create a
+                  delete marker when versioning is Enabled). Versioning is opt-in and retained versions count against
+                  quota.
                 </dd>
               </div>
             </dl>

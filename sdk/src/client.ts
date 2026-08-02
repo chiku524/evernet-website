@@ -276,13 +276,20 @@ export class EvernetClient {
         body,
       })
     }
-    return body as { key: string; object: EvernetObject; profile: EvernetProfile }
+    return body as {
+      key: string
+      versionId?: string
+      object: EvernetObject
+      profile: EvernetProfile
+    }
   }
 
-  async s3Get(key: string, opts: { range?: string } = {}): Promise<Blob> {
+  async s3Get(key: string, opts: { range?: string; versionId?: string } = {}): Promise<Blob> {
     const headers = this.authHeaders()
     if (opts.range) headers.set('Range', opts.range)
-    const res = await this.raw(`/s3/v1/object?key=${encodeURIComponent(key)}`, { headers })
+    const qs = new URLSearchParams({ key })
+    if (opts.versionId) qs.set('versionId', opts.versionId)
+    const res = await this.raw(`/s3/v1/object?${qs}`, { headers })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       throw new EvernetError((body as { error?: string }).error || 'S3 get failed', {
@@ -293,16 +300,72 @@ export class EvernetClient {
     return res.blob()
   }
 
-  async s3Delete(key: string, opts: { permanent?: boolean } = {}) {
+  async s3Delete(key: string, opts: { permanent?: boolean; versionId?: string } = {}) {
     const qs = new URLSearchParams({ key })
     if (opts.permanent) qs.set('permanent', 'true')
+    if (opts.versionId) qs.set('versionId', opts.versionId)
     return this.json<{
       ok: boolean
       trashed?: boolean
       permanent?: boolean
+      deleteMarker?: boolean
+      versionId?: string
       trashTtlMs?: number
       profile: EvernetProfile
     }>(`/s3/v1/object?${qs}`, { method: 'DELETE' })
+  }
+
+  async s3ListVersions(opts: { prefix?: string } = {}) {
+    const qs = new URLSearchParams()
+    if (opts.prefix) qs.set('prefix', opts.prefix)
+    const q = qs.toString()
+    return this.json<{
+      versions: import('./types.js').ObjectVersion[]
+      keyCount: number
+      prefix: string
+      versioning: import('./types.js').VersioningStatus
+    }>(`/s3/v1/versions${q ? `?${q}` : ''}`)
+  }
+
+  async getVersioning() {
+    const res = await this.json<{ status: import('./types.js').VersioningStatus }>(
+      '/s3/v1/versioning',
+    )
+    return res.status
+  }
+
+  async setVersioning(status: import('./types.js').VersioningStatus) {
+    const res = await this.json<{ status: import('./types.js').VersioningStatus }>(
+      '/s3/v1/versioning',
+      { method: 'PUT', body: JSON.stringify({ status }) },
+    )
+    return res.status
+  }
+
+  async getLifecycle() {
+    const res = await this.json<{ rules: import('./types.js').LifecycleRule[] }>(
+      '/s3/v1/lifecycle',
+    )
+    return res.rules
+  }
+
+  async setLifecycle(rules: import('./types.js').LifecycleRule[]) {
+    const res = await this.json<{ rules: import('./types.js').LifecycleRule[] }>(
+      '/s3/v1/lifecycle',
+      { method: 'PUT', body: JSON.stringify({ rules }) },
+    )
+    return res.rules
+  }
+
+  async s3RestoreVersion(input: { key: string; versionId: string }) {
+    return this.json<{
+      ok: boolean
+      key: string
+      versionId: string
+      object: EvernetObject
+      profile: EvernetProfile
+      folders: string[]
+    }>('/s3/v1/restore-version', { method: 'POST', body: JSON.stringify(input) })
   }
 
   async s3Restore(input: { key?: string; hash?: string }) {

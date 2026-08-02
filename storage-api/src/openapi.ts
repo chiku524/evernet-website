@@ -87,8 +87,44 @@ export const openApiSpec = {
     '/status': {
       get: {
         tags: ['Public'],
-        summary: 'Readiness, capabilities, and Mainnet notes',
+        summary: 'Readiness, capabilities (incl. versioning/lifecycle), and Mainnet notes',
         responses: { '200': { description: 'Public status JSON' } },
+      },
+    },
+    '/s3/v1/versioning': {
+      get: {
+        tags: ['S3'],
+        summary: 'Get vault versioning status',
+        security: [{ bearerAuth: [] }],
+        responses: { '200': { description: 'Versioning status' } },
+      },
+      put: {
+        tags: ['S3'],
+        summary: 'Set vault versioning (Enabled | Suspended | Disabled)',
+        security: [{ bearerAuth: [] }],
+        responses: { '200': { description: 'Updated status' } },
+      },
+    },
+    '/s3/v1/lifecycle': {
+      get: {
+        tags: ['S3'],
+        summary: 'Get lifecycle rules',
+        security: [{ bearerAuth: [] }],
+        responses: { '200': { description: 'Lifecycle rules' } },
+      },
+      put: {
+        tags: ['S3'],
+        summary: 'Replace lifecycle rules',
+        security: [{ bearerAuth: [] }],
+        responses: { '200': { description: 'Saved rules' } },
+      },
+    },
+    '/s3/v1/versions': {
+      get: {
+        tags: ['S3'],
+        summary: 'List object versions by prefix',
+        security: [{ bearerAuth: [] }],
+        responses: { '200': { description: 'Version listing' } },
       },
     },
     '/openapi.json': {

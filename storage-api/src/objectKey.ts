@@ -25,16 +25,85 @@ export function parseObjectKey(key: unknown): { folder: string; name: string } {
 export function findByKey(
   objects: StoredObjectMeta[],
   key: string,
-  opts: { includeTrash?: boolean } = {},
+  opts: { includeTrash?: boolean; includeDeleteMarkers?: boolean } = {},
 ): StoredObjectMeta | undefined {
   const parsed = parseObjectKey(key)
-  return objects.find((o) => {
+  const matches = objects.filter((o) => {
     if (o.deletedAt && !opts.includeTrash) return false
     return (
       normalizeFolderPath(o.folder || '') === parsed.folder &&
       normalizeFileName(o.name) === parsed.name
     )
   })
+  if (!matches.length) return undefined
+  const latest =
+    matches.find((o) => o.isLatest) ||
+    [...matches].sort((a, b) => b.createdAt - a.createdAt)[0]
+  if (latest.isDeleteMarker && !opts.includeDeleteMarkers) return undefined
+  return latest
+}
+
+export function findVersion(
+  objects: StoredObjectMeta[],
+  key: string,
+  versionId: string,
+  opts: { includeTrash?: boolean } = {},
+): StoredObjectMeta | undefined {
+  return objects.find((o) => {
+    if (o.deletedAt && !opts.includeTrash) return false
+    if (objectKey(o) !== key) return false
+    return o.versionId === versionId || o.hash === versionId
+  })
+}
+
+/** All versions under a prefix (for ListObjectVersions). */
+export function listVersionsByPrefix(
+  objects: StoredObjectMeta[],
+  opts: { prefix?: string },
+): Array<{
+  key: string
+  versionId: string
+  hash: string
+  size: number
+  lastModified: number
+  mimeType: string
+  isLatest: boolean
+  isDeleteMarker: boolean
+}> {
+  const prefix = String(opts.prefix || '').replace(/^\/+/, '')
+  const rows: Array<{
+    key: string
+    versionId: string
+    hash: string
+    size: number
+    lastModified: number
+    mimeType: string
+    isLatest: boolean
+    isDeleteMarker: boolean
+  }> = []
+
+  for (const obj of objects) {
+    if (obj.deletedAt) continue
+    const key = objectKey(obj)
+    if (prefix && !key.startsWith(prefix)) continue
+    rows.push({
+      key,
+      versionId: obj.versionId || obj.hash,
+      hash: obj.hash,
+      size: obj.size,
+      lastModified: obj.createdAt,
+      mimeType: obj.mimeType,
+      isLatest: Boolean(obj.isLatest),
+      isDeleteMarker: Boolean(obj.isDeleteMarker),
+    })
+  }
+
+  rows.sort((a, b) => {
+    const k = a.key.localeCompare(b.key)
+    if (k !== 0) return k
+    return b.lastModified - a.lastModified
+  })
+  return rows
 }
 
 /** S3-style list with optional prefix + delimiter (usually `/`). */
@@ -42,7 +111,14 @@ export function listByPrefix(
   objects: StoredObjectMeta[],
   opts: { prefix?: string; delimiter?: string },
 ): {
-  contents: Array<{ key: string; hash: string; size: number; lastModified: number; mimeType: string }>
+  contents: Array<{
+    key: string
+    hash: string
+    size: number
+    lastModified: number
+    mimeType: string
+    versionId?: string
+  }>
   commonPrefixes: string[]
 } {
   const prefix = String(opts.prefix || '').replace(/^\/+/, '')
@@ -53,10 +129,12 @@ export function listByPrefix(
     size: number
     lastModified: number
     mimeType: string
+    versionId?: string
   }> = []
   const prefixSet = new Set<string>()
 
   for (const obj of objects) {
+    if (obj.isDeleteMarker) continue
     const key = objectKey(obj)
     if (prefix && !key.startsWith(prefix)) continue
 
@@ -75,6 +153,7 @@ export function listByPrefix(
       size: obj.size,
       lastModified: obj.createdAt,
       mimeType: obj.mimeType,
+      versionId: obj.versionId || obj.hash,
     })
   }
 

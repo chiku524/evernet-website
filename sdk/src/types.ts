@@ -23,6 +23,31 @@ export type EvernetObject = {
   /** Soft-deleted; present while in trash (30d TTL). */
   deletedAt?: number
   trashed?: boolean
+  versionId?: string
+  isLatest?: boolean
+  isDeleteMarker?: boolean
+}
+
+export type VersioningStatus = 'Disabled' | 'Enabled' | 'Suspended'
+
+export type LifecycleRule = {
+  id: string
+  enabled: boolean
+  prefix: string
+  expirationDays?: number
+  noncurrentDays?: number
+  abortMultipartDays?: number
+}
+
+export type ObjectVersion = {
+  key: string
+  versionId: string
+  hash: string
+  size: number
+  lastModified: number
+  mimeType: string
+  isLatest: boolean
+  isDeleteMarker: boolean
 }
 
 export type VaultListing = {

@@ -14,8 +14,11 @@ export type {
   EvernetObject,
   EvernetProfile,
   EvernetProject,
+  LifecycleRule,
+  ObjectVersion,
   PublicConfig,
   UploadMeta,
   UsageInfo,
   VaultListing,
+  VersioningStatus,
 } from './types.js'

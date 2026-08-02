@@ -1,6 +1,6 @@
 {
   "name": "evernet-sdk",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Evernet Storage SDK — wallet-linked encrypted object storage for Stellar",
   "type": "module",
   "main": "./dist/index.js",

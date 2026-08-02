@@ -324,3 +324,73 @@ export async function createShareGrant(input: {
     body: JSON.stringify(input),
   })
 }
+
+export type VersioningStatus = 'Disabled' | 'Enabled' | 'Suspended'
+
+export type ObjectVersion = {
+  key: string
+  versionId: string
+  hash: string
+  size: number
+  lastModified: number
+  mimeType: string
+  isLatest: boolean
+  isDeleteMarker: boolean
+}
+
+export type LifecycleRule = {
+  id: string
+  enabled: boolean
+  prefix: string
+  expirationDays?: number
+  noncurrentDays?: number
+  abortMultipartDays?: number
+}
+
+export async function getVersioning(): Promise<VersioningStatus> {
+  const res = await api<{ status: VersioningStatus }>('/s3/v1/versioning')
+  return res.status
+}
+
+export async function setVersioning(status: VersioningStatus): Promise<VersioningStatus> {
+  const res = await api<{ status: VersioningStatus }>('/s3/v1/versioning', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  })
+  return res.status
+}
+
+export async function listObjectVersions(prefix = ''): Promise<ObjectVersion[]> {
+  const qs = prefix ? `?prefix=${encodeURIComponent(prefix)}` : ''
+  const res = await api<{ versions: ObjectVersion[] }>(`/s3/v1/versions${qs}`)
+  return res.versions || []
+}
+
+export async function restoreObjectVersion(key: string, versionId: string) {
+  return api<{ object: ApiObject; profile: ApiProfile }>('/s3/v1/restore-version', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, versionId }),
+  })
+}
+
+export async function deleteObjectVersion(key: string, versionId: string) {
+  return api(`/s3/v1/object?key=${encodeURIComponent(key)}&versionId=${encodeURIComponent(versionId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function getLifecycleRules(): Promise<LifecycleRule[]> {
+  const res = await api<{ rules: LifecycleRule[] }>('/s3/v1/lifecycle')
+  return res.rules || []
+}
+
+export async function setLifecycleRules(rules: LifecycleRule[]): Promise<LifecycleRule[]> {
+  const res = await api<{ rules: LifecycleRule[] }>('/s3/v1/lifecycle', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rules }),
+  })
+  return res.rules
+}

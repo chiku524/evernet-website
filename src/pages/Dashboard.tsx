@@ -16,20 +16,27 @@ import {
   createShareGrant,
   deleteFolder,
   deleteObject,
+  deleteObjectVersion,
   downloadObject,
   fetchPublicConfig,
   getProfile,
+  getVersioning,
   hasSession,
   listApiKeys,
+  listObjectVersions,
   listProjects,
   listVault,
   loginWithWallet,
   renameFolder,
   restoreObject,
+  restoreObjectVersion,
   revokeApiKey,
   sessionAddress,
+  setVersioning,
   updateObject,
   uploadObject,
+  type ObjectVersion,
+  type VersioningStatus,
 } from '../lib/api'
 import { decryptBlob, encryptFile } from '../lib/crypto'
 import { clearVaultPassphrase, resolveVaultPassphrase } from '../lib/vault-passphrase'
@@ -127,6 +134,8 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<ApiProject[]>([])
   const [createdKeySecret, setCreatedKeySecret] = useState<string | null>(null)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [versioning, setVersioningState] = useState<VersioningStatus>('Disabled')
+  const [versions, setVersions] = useState<ObjectVersion[]>([])
   const [keyName, setKeyName] = useState('server')
   const [keyProjectId, setKeyProjectId] = useState('')
   const [projectName, setProjectName] = useState('app')
@@ -167,17 +176,19 @@ export default function Dashboard() {
       setAuthed(false)
       return
     }
-    const [p, listing, keys, projectList] = await Promise.all([
+    const [p, listing, keys, projectList, ver] = await Promise.all([
       getProfile(),
       listVault(showTrash ? { trash: 'only' } : {}),
       listApiKeys().catch(() => []),
       listProjects().catch(() => []),
+      getVersioning().catch(() => 'Disabled' as VersioningStatus),
     ])
     setProfile(p)
     setObjects(listing.objects)
     setFolders(listing.folders)
     setApiKeys(keys)
     setProjects(projectList)
+    setVersioningState(ver)
     setAuthed(true)
   }, [showTrash])
 
@@ -261,6 +272,29 @@ export default function Dashboard() {
   }, [objects, folders, currentFolder, query, showTrash])
 
   const selectedObj = objects.find((o) => o.hash === selected) ?? null
+  const selectedKey = selectedObj
+    ? selectedObj.key ||
+      (selectedObj.folder ? `${selectedObj.folder}/${selectedObj.name}` : selectedObj.name)
+    : null
+
+  useEffect(() => {
+    if (!selectedKey || versioning !== 'Enabled' || showTrash) {
+      setVersions([])
+      return
+    }
+    let cancelled = false
+    void listObjectVersions(selectedKey)
+      .then((rows) => {
+        if (!cancelled) setVersions(rows.filter((v) => v.key === selectedKey))
+      })
+      .catch(() => {
+        if (!cancelled) setVersions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedKey, versioning, showTrash, objects])
+
   const usage = profile?.usedBytes ?? 0
   const quota = profile?.quotaBytes ?? 0
   const usagePct = quota > 0 ? Math.min(100, (usage / quota) * 100) : 0
@@ -479,6 +513,53 @@ export default function Dashboard() {
       setToast('Object restored')
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Restore failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleToggleVersioning() {
+    setBusy(true)
+    try {
+      const next = versioning === 'Enabled' ? 'Disabled' : 'Enabled'
+      const status = await setVersioning(next)
+      setVersioningState(status)
+      setToast(
+        status === 'Enabled'
+          ? 'Versioning enabled · overwrites keep prior versions (quota applies)'
+          : 'Versioning disabled · overwrites replace the current object',
+      )
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not update versioning')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRestoreVersion(versionId: string) {
+    if (!selectedKey) return
+    setBusy(true)
+    try {
+      await restoreObjectVersion(selectedKey, versionId)
+      await refresh()
+      setToast('Version restored as latest')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Restore version failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDeleteVersion(versionId: string) {
+    if (!selectedKey) return
+    if (!window.confirm('Permanently delete this version?')) return
+    setBusy(true)
+    try {
+      await deleteObjectVersion(selectedKey, versionId)
+      await refresh()
+      setToast('Version deleted')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Delete version failed')
     } finally {
       setBusy(false)
     }
@@ -1266,6 +1347,64 @@ export default function Dashboard() {
                       Share URL (ciphertext · 7 days)
                       <input readOnly value={shareUrl} onFocus={(e) => e.target.select()} />
                     </label>
+                  )}
+                  {!showTrash && (
+                    <div className="dash-versions">
+                      <div className="dash-versions-head">
+                        <p className="dash-detail-label">Versions</p>
+                        <button
+                          type="button"
+                          className="dash-btn ghost"
+                          disabled={busy}
+                          onClick={() => void handleToggleVersioning()}
+                        >
+                          {versioning === 'Enabled' ? 'Disable versioning' : 'Enable versioning'}
+                        </button>
+                      </div>
+                      {versioning !== 'Enabled' ? (
+                        <p className="dash-empty-hint">
+                          Off by default. When enabled, overwrites keep prior versions (they count against quota).
+                          Lifecycle rules via API: <code>PUT /s3/v1/lifecycle</code>.
+                        </p>
+                      ) : versions.length === 0 ? (
+                        <p className="dash-empty-hint">No prior versions for this key yet.</p>
+                      ) : (
+                        <ul className="dash-version-list">
+                          {versions.map((v) => (
+                            <li key={v.versionId}>
+                              <div>
+                                <code>{v.versionId.slice(0, 12)}…</code>
+                                {v.isLatest ? ' · latest' : ''}
+                                {v.isDeleteMarker ? ' · delete marker' : ` · ${formatBytes(v.size)}`}
+                                <span className="dash-version-date">
+                                  {' '}
+                                  {formatDate(v.lastModified)}
+                                </span>
+                              </div>
+                              <div className="dash-row-actions">
+                                {!v.isDeleteMarker && !v.isLatest && (
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => void handleRestoreVersion(v.versionId)}
+                                  >
+                                    Restore
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="danger"
+                                  disabled={busy}
+                                  onClick={() => void handleDeleteVersion(v.versionId)}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   )}
                 </div>
               </>

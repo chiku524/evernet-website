@@ -444,6 +444,45 @@ button.dash-crumb {
   color: var(--muted);
 }
 
+.dash-versions {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.dash-versions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.dash-versions-head .dash-detail-label {
+  margin: 0;
+}
+
+.dash-version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.dash-version-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.dash-version-date {
+  opacity: 0.65;
+  font-size: 0.8rem;
+}
+
 .dash-empty-hint {
   max-width: 42ch;
   margin-inline: auto;

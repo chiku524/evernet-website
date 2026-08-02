@@ -153,7 +153,7 @@ app.get('/status', (_req, res) => {
   res.json({
     ok: true,
     apiVersion: API_VERSION,
-    s3Version: '3',
+    s3Version: '4',
     network,
     storageDriver: driver.name,
     onChain,
@@ -169,6 +169,8 @@ app.get('/status', (_req, res) => {
       shareGrants: true,
       rangedGet: true,
       ifNoneMatch: true,
+      versioning: true,
+      lifecycle: true,
     },
     mainnet: {
       paymentsSupported: true,

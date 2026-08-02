@@ -17,19 +17,37 @@ import {
   createMultipartSession,
   putMultipartPart,
 } from './multipart.js'
-import { findByKey, listByPrefix, objectKey, parseObjectKey } from './objectKey.js'
+import { applyLifecycle } from './lifecycle.js'
+import {
+  findByKey,
+  findVersion,
+  listByPrefix,
+  listVersionsByPrefix,
+  objectKey,
+  parseObjectKey,
+} from './objectKey.js'
 import { createPresignToken, verifyPresignToken } from './presign.js'
 import { publicObject } from './publicMeta.js'
 import {
   TRASH_TTL_MS,
+  createDeleteMarker,
   deleteObjectLocal,
+  getLifecycleRules,
   getObject,
+  getObjectByVersion,
+  getVersioning,
   listFolders,
   listObjects,
   purgeExpiredTrash,
   readBlob,
   restoreObject,
+  restoreVersionLocal,
+  setLatestVersion,
+  setLifecycleRules,
+  setVersioning,
   trashObject,
+  type LifecycleRule,
+  type VersioningStatus,
 } from './store.js'
 import { deleteObjectOnChain, getMergedProfile } from './soroban.js'
 import { debitProjectUpload } from './projects.js'
@@ -84,6 +102,8 @@ function setObjectHeaders(
   res.setHeader('X-Object-Name', encodeURIComponent(meta.name))
   res.setHeader('X-Object-Size', String(meta.size))
   res.setHeader('X-Object-Encrypted', String(meta.encrypted))
+  res.setHeader('X-Object-Version-Id', meta.versionId || meta.hash)
+  res.setHeader('X-Object-Is-Latest', String(meta.isLatest !== false))
   const maxAge = opts?.cacheMaxAge
   if (maxAge != null && maxAge > 0) {
     res.setHeader('Cache-Control', `private, max-age=${maxAge}`)
@@ -92,7 +112,7 @@ function setObjectHeaders(
   }
   res.setHeader(
     'Access-Control-Expose-Headers',
-    'ETag, X-Object-Hash, X-Object-Key, X-Object-Name, X-Object-Size, X-Object-Encrypted, Content-Range, Accept-Ranges',
+    'ETag, X-Object-Hash, X-Object-Key, X-Object-Name, X-Object-Size, X-Object-Encrypted, X-Object-Version-Id, X-Object-Is-Latest, Content-Range, Accept-Ranges',
   )
 }
 
@@ -102,7 +122,7 @@ async function sendObjectBytes(
   rangeHeader?: string,
   opts?: { cacheMaxAge?: number; ifNoneMatch?: string },
 ) {
-  if (!meta) {
+  if (!meta || meta.isDeleteMarker) {
     res.status(404).json({ error: 'Not found' })
     return
   }
@@ -138,22 +158,26 @@ export const s3Router = Router()
 s3Router.get('/', (_req, res) => {
   res.json({
     name: 'Evernet S3-shaped API',
-    version: '3',
+    version: '4',
     notes:
-      'JSON S3-shaped API. Soft-delete trash (30d), batch delete, multipart, ranged GET, HEAD/copy, shares.',
+      'JSON S3-shaped API. Opt-in versioning, lifecycle rules, soft-delete trash (30d), multipart, shares.',
     maxSimplePutBytes: 80 * 1024 * 1024,
     maxPartBytes: MULTIPART_PART_MAX,
     maxParts: MULTIPART_MAX_PARTS,
     trashTtlMs: TRASH_TTL_MS,
     endpoints: {
       list: 'GET /s3/v1/objects?prefix=&delimiter=/&trash=',
+      versions: 'GET /s3/v1/versions?prefix=',
       put: 'PUT /s3/v1/object?key=',
-      get: 'GET /s3/v1/object?key= (Range + If-None-Match)',
-      head: 'HEAD /s3/v1/object?key=',
+      get: 'GET /s3/v1/object?key=&versionId= (Range + If-None-Match)',
+      head: 'HEAD /s3/v1/object?key=&versionId=',
       copy: 'POST /s3/v1/copy',
-      delete: 'DELETE /s3/v1/object?key=&permanent=',
+      delete: 'DELETE /s3/v1/object?key=&versionId=&permanent=',
       restore: 'POST /s3/v1/restore',
+      restoreVersion: 'POST /s3/v1/restore-version',
       deleteBatch: 'POST /s3/v1/delete',
+      versioning: 'GET/PUT /s3/v1/versioning',
+      lifecycle: 'GET/PUT /s3/v1/lifecycle',
       multipartCreate: 'POST /s3/v1/multipart',
       multipartPart: 'PUT /s3/v1/multipart/:uploadId/:partNumber',
       multipartComplete: 'POST /s3/v1/multipart/:uploadId/complete',
@@ -209,6 +233,7 @@ s3Router.use(requireWallet)
 
 s3Router.get('/objects', async (req: AuthedRequest, res) => {
   try {
+    await applyLifecycle(req.wallet!).catch(() => undefined)
     const trashQ = String(req.query.trash || '')
     const trash: boolean | 'only' =
       trashQ === '1' || trashQ === 'true' ? true : trashQ === 'only' ? 'only' : false
@@ -224,18 +249,74 @@ s3Router.get('/objects', async (req: AuthedRequest, res) => {
       delimiter: req.query.delimiter === undefined ? '/' : String(req.query.delimiter),
       trash,
       trashTtlMs: TRASH_TTL_MS,
+      versioning: await getVersioning(req.wallet!),
     })
   } catch (err) {
     sendErr(res, err, 'List failed')
   }
 })
 
+s3Router.get('/versions', async (req: AuthedRequest, res) => {
+  try {
+    await applyLifecycle(req.wallet!).catch(() => undefined)
+    const all = await listObjects(req.wallet!, { latestOnly: false })
+    const versions = listVersionsByPrefix(all, { prefix: String(req.query.prefix || '') })
+    res.json({
+      versions,
+      keyCount: versions.length,
+      prefix: String(req.query.prefix || ''),
+      versioning: await getVersioning(req.wallet!),
+    })
+  } catch (err) {
+    sendErr(res, err, 'List versions failed')
+  }
+})
+
+s3Router.get('/versioning', async (req: AuthedRequest, res) => {
+  try {
+    res.json({ status: await getVersioning(req.wallet!) })
+  } catch (err) {
+    sendErr(res, err, 'Get versioning failed')
+  }
+})
+
+s3Router.put('/versioning', async (req: AuthedRequest, res) => {
+  try {
+    const status = String(req.body?.status || '') as VersioningStatus
+    const next = await setVersioning(req.wallet!, status)
+    res.json({ status: next })
+  } catch (err) {
+    sendErr(res, err, 'Set versioning failed')
+  }
+})
+
+s3Router.get('/lifecycle', async (req: AuthedRequest, res) => {
+  try {
+    res.json({ rules: await getLifecycleRules(req.wallet!) })
+  } catch (err) {
+    sendErr(res, err, 'Get lifecycle failed')
+  }
+})
+
+s3Router.put('/lifecycle', async (req: AuthedRequest, res) => {
+  try {
+    const rules = (req.body?.rules || []) as LifecycleRule[]
+    const saved = await setLifecycleRules(req.wallet!, rules)
+    res.json({ rules: saved })
+  } catch (err) {
+    sendErr(res, err, 'Set lifecycle failed')
+  }
+})
+
 s3Router.put('/object', async (req: AuthedRequest, res) => {
   try {
+    await applyLifecycle(req.wallet!).catch(() => undefined)
     const key = String(req.query.key || '')
     const { folder, name } = parseObjectKey(key)
     const owner = req.wallet!
-    const existing = findByKey(await listObjects(owner), key)
+    const existing = findByKey(await listObjects(owner, { latestOnly: false }), key, {
+      includeDeleteMarkers: true,
+    })
     const data = Buffer.isBuffer(req.body) ? req.body : undefined
     if (!data?.length) {
       res.status(400).json({ error: 'Raw request body required (application/octet-stream)' })
@@ -251,11 +332,12 @@ s3Router.put('/object', async (req: AuthedRequest, res) => {
       encrypted: String(req.headers['x-evernet-encrypted'] ?? 'true') !== 'false',
       projectId: req.projectId,
       overwriteKey: String(req.query.overwrite || 'true') !== 'false',
-      existingByKey: existing ?? null,
+      existingByKey: existing && !existing.isDeleteMarker ? existing : existing ?? null,
     })
 
     res.status(201).json({
       key: objectKey(result.object),
+      versionId: result.object.versionId || result.object.hash,
       object: publicObject(result.object),
       profile: result.profile,
       folders: await listFolders(owner),
@@ -268,8 +350,14 @@ s3Router.put('/object', async (req: AuthedRequest, res) => {
 s3Router.get('/object', async (req: AuthedRequest, res) => {
   try {
     const key = String(req.query.key || '')
-    const meta = findByKey(await listObjects(req.wallet!), key)
-    await sendObjectBytes(res, meta ?? null, req.headers.range, {
+    const versionId = String(req.query.versionId || '')
+    let meta = null
+    if (versionId) {
+      meta = await getObjectByVersion(req.wallet!, key, versionId)
+    } else {
+      meta = findByKey(await listObjects(req.wallet!, { latestOnly: false }), key) ?? null
+    }
+    await sendObjectBytes(res, meta, req.headers.range, {
       ifNoneMatch: req.headers['if-none-match'],
     })
   } catch (err) {
@@ -280,8 +368,14 @@ s3Router.get('/object', async (req: AuthedRequest, res) => {
 s3Router.head('/object', async (req: AuthedRequest, res) => {
   try {
     const key = String(req.query.key || '')
-    const meta = findByKey(await listObjects(req.wallet!), key)
-    if (!meta) {
+    const versionId = String(req.query.versionId || '')
+    let meta = null
+    if (versionId) {
+      meta = await getObjectByVersion(req.wallet!, key, versionId)
+    } else {
+      meta = findByKey(await listObjects(req.wallet!, { latestOnly: false }), key) ?? null
+    }
+    if (!meta || meta.isDeleteMarker) {
       res.status(404).end()
       return
     }
@@ -394,13 +488,86 @@ s3Router.delete('/grants/:id', async (req: AuthedRequest, res) => {
 
 s3Router.delete('/object', async (req: AuthedRequest, res) => {
   try {
+    const owner = req.wallet!
     const key = String(req.query.key || '')
+    const versionId = String(req.query.versionId || '')
     const permanent =
       String(req.query.permanent || '').toLowerCase() === 'true' ||
       String(req.query.permanent || '') === '1'
-    const active = findByKey(await listObjects(req.wallet!), key)
+    const versioning = await getVersioning(owner)
+    const all = await listObjects(owner, { latestOnly: false })
+
+    if (versionId) {
+      const meta = findVersion(all, key, versionId)
+      if (!meta) {
+        res.status(404).json({ error: 'Version not found' })
+        return
+      }
+      const profile = await deleteObjectLocal(owner, meta.hash)
+      if (meta.projectId && !meta.deletedAt && !meta.isDeleteMarker) {
+        await debitProjectUpload(meta.projectId, meta.size).catch(() => undefined)
+      }
+      if (!meta.isDeleteMarker) {
+        await deleteObjectOnChain({ owner, hashHex: meta.hash }).catch(() => undefined)
+      }
+      // If we removed the latest, promote newest remaining version
+      if (meta.isLatest) {
+        const remaining = (await listObjects(owner, { latestOnly: false })).filter(
+          (o) => objectKey(o) === key,
+        )
+        if (remaining.length) {
+          const bytes = remaining.filter((o) => !o.isDeleteMarker)
+          const newest = [...(bytes.length ? bytes : remaining)].sort(
+            (a, b) => b.createdAt - a.createdAt,
+          )[0]
+          await setLatestVersion(owner, key, newest.versionId || newest.hash)
+        }
+      }
+      res.json({
+        ok: true,
+        key,
+        versionId,
+        permanent: true,
+        profile: await getMergedProfile(owner),
+        folders: await listFolders(owner),
+      })
+      return
+    }
+
+    if (versioning === 'Enabled' && !permanent) {
+      const latest = findByKey(all, key, { includeDeleteMarkers: true })
+      if (!latest) {
+        res.status(404).json({ error: 'Not found' })
+        return
+      }
+      if (latest.isDeleteMarker) {
+        res.json({
+          ok: true,
+          key,
+          deleteMarker: true,
+          versionId: latest.versionId,
+          profile: await getMergedProfile(owner),
+          folders: await listFolders(owner),
+        })
+        return
+      }
+      const marker = await createDeleteMarker(owner, latest.folder, latest.name, latest.projectId)
+      res.json({
+        ok: true,
+        key,
+        deleteMarker: true,
+        versionId: marker.versionId,
+        profile: await getMergedProfile(owner),
+        folders: await listFolders(owner),
+      })
+      return
+    }
+
+    const active = findByKey(all, key)
     const trashed = permanent
-      ? findByKey(await listObjects(req.wallet!, { trash: 'only' }), key, { includeTrash: true })
+      ? findByKey(await listObjects(owner, { trash: 'only', latestOnly: false }), key, {
+          includeTrash: true,
+        })
       : undefined
     const meta = active || trashed
     if (!meta) {
@@ -408,21 +575,21 @@ s3Router.delete('/object', async (req: AuthedRequest, res) => {
       return
     }
     if (permanent || meta.deletedAt) {
-      const profile = await deleteObjectLocal(req.wallet!, meta.hash)
+      const profile = await deleteObjectLocal(owner, meta.hash)
       if (meta.projectId && !meta.deletedAt) {
         await debitProjectUpload(meta.projectId, meta.size).catch(() => undefined)
       }
-      await deleteObjectOnChain({ owner: req.wallet!, hashHex: meta.hash }).catch(() => undefined)
+      await deleteObjectOnChain({ owner, hashHex: meta.hash }).catch(() => undefined)
       res.json({
         ok: true,
         key,
         permanent: true,
         profile,
-        folders: await listFolders(req.wallet!),
+        folders: await listFolders(owner),
       })
       return
     }
-    const profile = await trashObject(req.wallet!, meta.hash)
+    const profile = await trashObject(owner, meta.hash)
     if (meta.projectId) {
       await debitProjectUpload(meta.projectId, meta.size).catch(() => undefined)
     }
@@ -432,10 +599,33 @@ s3Router.delete('/object', async (req: AuthedRequest, res) => {
       trashed: true,
       trashTtlMs: TRASH_TTL_MS,
       profile,
-      folders: await listFolders(req.wallet!),
+      folders: await listFolders(owner),
     })
   } catch (err) {
     sendErr(res, err, 'Delete failed')
+  }
+})
+
+s3Router.post('/restore-version', async (req: AuthedRequest, res) => {
+  try {
+    const owner = req.wallet!
+    const key = String(req.body?.key || '')
+    const versionId = String(req.body?.versionId || '')
+    if (!key || !versionId) {
+      res.status(400).json({ error: 'key and versionId required' })
+      return
+    }
+    const object = await restoreVersionLocal(owner, key, versionId)
+    res.json({
+      ok: true,
+      key: objectKey(object),
+      versionId: object.versionId || object.hash,
+      object: publicObject(object),
+      folders: await listFolders(owner),
+      profile: await getMergedProfile(owner),
+    })
+  } catch (err) {
+    sendErr(res, err, 'Restore version failed')
   }
 })
 
