@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { DEFAULT_RECEIVER, STORAGE_CONTRACT_ID, STORAGE_PLANS } from '../lib/stellar'
 import { WALLET_CATALOGUE } from '../lib/wallet'
 import { formatBytes } from '../lib/format'
@@ -36,9 +37,68 @@ const tocMore = [
   { id: 'links', label: 'Links & contracts' },
 ]
 
+const ALL_SECTIONS = [...tocGuide, ...tocDev, ...tocMore]
+const SECTION_IDS = new Set(ALL_SECTIONS.map((item) => item.id))
+const DEFAULT_SECTION = 'overview'
+
 const API_BASE = 'https://evernet-storage-api.vercel.app'
 
+function sectionFromHash(hash: string) {
+  const id = hash.replace(/^#/, '')
+  return SECTION_IDS.has(id) ? id : DEFAULT_SECTION
+}
+
+function TocLink({
+  id,
+  label,
+  active,
+  onSelect,
+}: {
+  id: string
+  label: string
+  active: boolean
+  onSelect: (id: string) => void
+}) {
+  return (
+    <li>
+      <a
+        href={`#${id}`}
+        className={active ? 'is-active' : undefined}
+        aria-current={active ? 'page' : undefined}
+        onClick={(event) => {
+          event.preventDefault()
+          onSelect(id)
+        }}
+      >
+        {label}
+      </a>
+    </li>
+  )
+}
+
 export default function Docs() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const articleRef = useRef<HTMLElement>(null)
+  const activeId = useMemo(() => sectionFromHash(location.hash), [location.hash])
+
+  const selectSection = (id: string) => {
+    if (!SECTION_IDS.has(id)) return
+    navigate({ pathname: '/docs', hash: id })
+  }
+
+  useLayoutEffect(() => {
+    const article = articleRef.current
+    if (!article) return
+    for (const section of article.querySelectorAll<HTMLElement>(':scope > section[id]')) {
+      section.hidden = section.id !== activeId
+    }
+  }, [activeId])
+
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [activeId])
+
   return (
     <div className="docs-page">
       <header className="docs-top">
@@ -49,7 +109,15 @@ export default function Docs() {
           </Link>
           <nav className="docs-top-nav" aria-label="Site">
             <Link to="/docs">Docs</Link>
-            <a href="#api">API</a>
+            <a
+              href="#api"
+              onClick={(event) => {
+                event.preventDefault()
+                selectSection('api')
+              }}
+            >
+              API
+            </a>
             <Link to="/labs/notes">Labs</Link>
             <Link to="/dashboard">Vault</Link>
             <Link className="docs-top-cta" to="/dashboard">
@@ -60,40 +128,67 @@ export default function Docs() {
       </header>
 
       <div className="container docs-layout">
-        <aside className="docs-toc" aria-label="On this page">
+        <aside className="docs-toc" aria-label="Documentation sections">
           <p className="docs-toc-label">Guide</p>
           <ul>
             {tocGuide.map((item) => (
-              <li key={item.id}>
-                <a href={`#${item.id}`}>{item.label}</a>
-              </li>
+              <TocLink
+                key={item.id}
+                id={item.id}
+                label={item.label}
+                active={activeId === item.id}
+                onSelect={selectSection}
+              />
             ))}
           </ul>
           <p className="docs-toc-label">Developers</p>
           <ul>
             {tocDev.map((item) => (
-              <li key={item.id}>
-                <a href={`#${item.id}`}>{item.label}</a>
-              </li>
+              <TocLink
+                key={item.id}
+                id={item.id}
+                label={item.label}
+                active={activeId === item.id}
+                onSelect={selectSection}
+              />
             ))}
           </ul>
           <p className="docs-toc-label">More</p>
           <ul>
             {tocMore.map((item) => (
-              <li key={item.id}>
-                <a href={`#${item.id}`}>{item.label}</a>
-              </li>
+              <TocLink
+                key={item.id}
+                id={item.id}
+                label={item.label}
+                active={activeId === item.id}
+                onSelect={selectSection}
+              />
             ))}
           </ul>
         </aside>
 
-        <article className="docs-content">
+        <article
+          ref={articleRef}
+          className="docs-content"
+          onClick={(event) => {
+            const target = (event.target as HTMLElement).closest('a[href^="#"]')
+            if (!(target instanceof HTMLAnchorElement)) return
+            const id = target.getAttribute('href')?.slice(1)
+            if (!id || !SECTION_IDS.has(id)) return
+            event.preventDefault()
+            selectSection(id)
+          }}
+        >
           <p className="eyebrow">Documentation</p>
-          <h1>Evernet docs</h1>
-          <p className="docs-lead">
-            Connect a Stellar wallet, unlock a vault passphrase, buy capacity with XLM, and store encrypted files — or
-            integrate the same surface from apps via <code>evernet-sdk</code> and the public HTTP API.
-          </p>
+          {activeId === DEFAULT_SECTION ? (
+            <>
+              <h1>Evernet docs</h1>
+              <p className="docs-lead">
+                Connect a Stellar wallet, unlock a vault passphrase, buy capacity with XLM, and store encrypted files —
+                or integrate the same surface from apps via <code>evernet-sdk</code> and the public HTTP API.
+              </p>
+            </>
+          ) : null}
 
           <section id="overview">
             <h2>What is Evernet?</h2>
