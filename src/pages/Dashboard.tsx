@@ -820,8 +820,8 @@ export default function Dashboard() {
           </div>
           <p className="dash-quota-note">
             {profile
-              ? `${profile.source === 'soroban' ? 'Soroban profile' : 'API mirror'} · ${profile.objectCount} objects`
-              : 'Connect wallet to load on-chain quota'}
+              ? `${profile.source === 'soroban' ? 'On-chain profile' : 'API profile'} · ${profile.objectCount} objects`
+              : 'Connect a Testnet wallet to load quota'}
           </p>
           <button type="button" className="dash-btn primary dash-buy-btn" onClick={() => setBuyOpen(true)}>
             Buy storage
@@ -1018,7 +1018,7 @@ export default function Dashboard() {
                 <p>
                   {mobileClient && !inAppWallet
                     ? 'On a phone browser, extension wallets like Freighter desktop are not available. Connect with LOBSTR, Albedo, or xBull — or open evernet.tech inside your wallet’s in-app browser.'
-                    : 'Connect Freighter, LOBSTR, xBull, Albedo, Hana, Rabet or any other supported Stellar wallet to load the Soroban storage profile for that address. Files are encrypted in-browser, stored on the Evernet API, and registered on-chain.'}
+                    : 'Connect Freighter, LOBSTR, xBull, Albedo, Hana, Rabet or any other supported Stellar wallet set to Testnet. Files are encrypted in-browser, stored on the Evernet API, and content hashes register on-chain when available.'}
                 </p>
                 <button type="button" className="dash-btn primary" disabled={busy} onClick={() => void connectAndAuth()}>
                   {busy ? 'Connecting…' : 'Connect wallet'}

@@ -206,8 +206,8 @@ export default function Docs() {
               <div>
                 <h3>Testnet (default)</h3>
                 <p>
-                  Free test XLM via Friendbot. Safe for trying uploads and purchases. Evernet’s treasury and Soroban
-                  contract are deployed on Testnet today.
+                  Free test XLM via Friendbot. Safe for trying uploads and purchases. Evernet’s treasury and storage
+                  contract are deployed on Stellar Testnet today — the same network Freighter and xBull call “Testnet”.
                 </p>
               </div>
               <div>
@@ -218,6 +218,12 @@ export default function Docs() {
                 </p>
               </div>
             </div>
+            <p>
+              <strong>Horizon and Soroban are not different testnets.</strong> Freighter / xBull’s Testnet setting uses
+              passphrase <code>Test SDF Network ; September 2015</code>. Evernet uses that same network: Horizon for
+              payments and account history, Soroban RPC for the quota/lease contract. Set the wallet to{' '}
+              <strong>Testnet</strong> (not Futurenet, not Mainnet) and you are on the right rail.
+            </p>
             <p>
               Always match your wallet’s network to the network selected in the Buy Storage modal, or the transaction
               will be rejected.

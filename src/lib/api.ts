@@ -1,6 +1,6 @@
 import { Networks } from '@stellar/stellar-sdk'
 import type { StellarNetworkId } from './stellar'
-import { signTransactionXdr } from './wallet'
+import { assertWalletNetwork, signTransactionXdr } from './wallet'
 
 function networkIdFromPassphrase(passphrase: string): StellarNetworkId {
   return passphrase === Networks.PUBLIC ? 'public' : 'testnet'
@@ -114,6 +114,10 @@ export async function loginWithWallet(
   if (loginInFlight) return loginInFlight
 
   loginInFlight = (async () => {
+    // Freighter / xBull expose Horizon Testnet — that is Evernet’s network.
+    // Soroban RPC is the same Testnet, not a second chain to switch to.
+    await assertWalletNetwork(network)
+
     const challenge = await api<{ transaction: string; network: string }>('/auth/challenge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
