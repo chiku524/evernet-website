@@ -106,6 +106,47 @@ export function isWalletConnectSelected(): boolean {
   }
 }
 
+function wcChainLabel(chain: string): string {
+  if (chain === 'pubnet') return 'Mainnet'
+  if (chain === 'testnet') return 'Testnet'
+  return chain
+}
+
+/**
+ * WalletConnect sessions encode the network in the CAIP account
+ * (`stellar:testnet:G…` / `stellar:pubnet:G…`). Signing on the wrong chain
+ * produces a valid-looking approval that fails SEP-10 verify.
+ */
+export async function assertWalletConnectChain(
+  network: StellarNetworkId,
+  address?: string,
+): Promise<void> {
+  if (!isWalletConnectSelected() || !walletConnectInstance) return
+  const anyMod = walletConnectInstance as ModuleInterface & {
+    getSessions?: () => Promise<Array<{ topic: string; namespaces?: { stellar?: { accounts?: string[] } } }>>
+  }
+  if (!anyMod.getSessions) return
+  await hydrateWalletConnectSessions(walletConnectInstance).catch(() => undefined)
+  const sessions = await anyMod.getSessions().catch(() => [])
+  const expected = network === 'public' ? 'pubnet' : 'testnet'
+  const expectedLabel = getNetworkConfig(network).label
+
+  for (const session of sessions || []) {
+    for (const account of session.namespaces?.stellar?.accounts || []) {
+      const parts = account.split(':')
+      const chain = parts[1]
+      const publicKey = parts[2]
+      if (!chain || !publicKey) continue
+      if (address && publicKey !== address) continue
+      if (chain !== expected) {
+        throw new Error(
+          `LOBSTR is connected on ${wcChainLabel(chain)}, but Evernet is on ${expectedLabel}. In LOBSTR open ≡ → WalletConnect, disconnect Evernet, switch the wallet to ${expectedLabel}, then connect again.`,
+        )
+      }
+    }
+  }
+}
+
 /**
  * WalletConnect needs a Reown project id and pulls in a large dependency tree,
  * so it is only loaded when the deployment actually configures one.
@@ -125,11 +166,11 @@ async function walletConnectModule(network: StellarNetworkId): Promise<ModuleInt
         url: window.location.origin,
         icons: [`${window.location.origin}/favicon.svg`],
       },
-      // Advertise both so LOBSTR can attach; prefer the active Evernet network first.
-      allowedChains:
-        network === 'public'
-          ? [WalletConnectTargetChain.PUBLIC, WalletConnectTargetChain.TESTNET]
-          : [WalletConnectTargetChain.TESTNET, WalletConnectTargetChain.PUBLIC],
+      // One chain only — LOBSTR signs with the session chain passphrase. Dual-chain
+      // pairing let pubnet sessions sign testnet SEP-10 challenges → "Invalid signature".
+      allowedChains: [
+        network === 'public' ? WalletConnectTargetChain.PUBLIC : WalletConnectTargetChain.TESTNET,
+      ],
     }) as unknown as ModuleInterface
 
     // Patch signTransaction for response-shape normalization + timeout (no auto-retry).
@@ -250,6 +291,7 @@ export async function connectWallet(network: StellarNetworkId): Promise<string> 
     const { address } = await StellarWalletsKit.authModal()
     if (isWalletConnectSelected() && walletConnectInstance) {
       await hydrateWalletConnectSessions(walletConnectInstance).catch(() => undefined)
+      await assertWalletConnectChain(network, address)
     }
     return address
   } catch (err) {
@@ -300,15 +342,18 @@ export async function signTransactionXdr(
   xdr: string,
   address: string,
   network: StellarNetworkId,
+  networkPassphrase?: string,
 ): Promise<string> {
   await initWalletKit(network)
+  const passphrase = networkPassphrase || getNetworkConfig(network).passphrase
   try {
     if (isWalletConnectSelected() && walletConnectInstance) {
       await hydrateWalletConnectSessions(walletConnectInstance)
+      await assertWalletConnectChain(network, address)
     }
     const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr, {
       address,
-      networkPassphrase: getNetworkConfig(network).passphrase,
+      networkPassphrase: passphrase,
     })
     if (!signedTxXdr) throw new Error('Wallet returned an empty signature')
     return signedTxXdr

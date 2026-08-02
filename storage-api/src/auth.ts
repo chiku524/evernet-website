@@ -193,7 +193,11 @@ export function verifyChallengeAndIssueToken(input: {
     })
 
   if (!signedBy(server)) throw new Error('Server signature missing or altered')
-  if (!signedBy(Keypair.fromPublicKey(input.address))) throw new Error('Invalid wallet signature')
+  if (!signedBy(Keypair.fromPublicKey(input.address))) {
+    throw new Error(
+      'Invalid wallet signature — wallet may have signed with a different network passphrase (Testnet vs Mainnet). Switch the wallet to this API’s network and retry.',
+    )
+  }
 
   return signToken(input.address)
 }

@@ -1,5 +1,10 @@
+import { Networks } from '@stellar/stellar-sdk'
 import type { StellarNetworkId } from './stellar'
 import { signTransactionXdr } from './wallet'
+
+function networkIdFromPassphrase(passphrase: string): StellarNetworkId {
+  return passphrase === Networks.PUBLIC ? 'public' : 'testnet'
+}
 
 const TOKEN_KEY = 'evernet-api-token'
 const ADDR_KEY = 'evernet-api-address'
@@ -115,16 +120,39 @@ export async function loginWithWallet(
       body: JSON.stringify({ address }),
     })
 
-    const signedTransaction = await signTransactionXdr(challenge.transaction, address, network)
+    // Challenge passphrase is authoritative (API STELLAR_NETWORK), not UI state.
+    const challengeNetwork = networkIdFromPassphrase(challenge.network)
+    if (challengeNetwork !== network) {
+      throw new Error(
+        `Evernet API is on ${challengeNetwork === 'public' ? 'Mainnet' : 'Testnet'}, but this vault is set to ${network === 'public' ? 'Mainnet' : 'Testnet'}. Refresh and try again.`,
+      )
+    }
 
-    const result = await api<{ token: string; address: string }>('/auth/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, signedTransaction }),
-    })
-    localStorage.setItem(TOKEN_KEY, result.token)
-    localStorage.setItem(ADDR_KEY, result.address)
-    return result.address
+    const signedTransaction = await signTransactionXdr(
+      challenge.transaction,
+      address,
+      challengeNetwork,
+      challenge.network,
+    )
+
+    try {
+      const result = await api<{ token: string; address: string }>('/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, signedTransaction }),
+      })
+      localStorage.setItem(TOKEN_KEY, result.token)
+      localStorage.setItem(ADDR_KEY, result.address)
+      return result.address
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (/invalid wallet signature|invalid signature/i.test(message)) {
+        throw new Error(
+          'Invalid signature — the wallet likely signed on the wrong network. Evernet is on Testnet: disconnect in LOBSTR → WalletConnect, switch to Testnet, then connect again.',
+        )
+      }
+      throw err
+    }
   })().finally(() => {
     loginInFlight = null
   })

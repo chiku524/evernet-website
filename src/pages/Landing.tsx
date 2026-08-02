@@ -38,12 +38,12 @@ const problems = [
     body: 'Cloud giants dominate storage but introduce censorship, breaches, vendor lock-in, and rising costs.',
   },
   {
-    title: 'Usability gaps',
-    body: 'Existing decentralized networks often trade performance and ease-of-use for distribution.',
+    title: 'Wallet-native gap',
+    body: 'Most storage still asks for accounts and cards — not a Stellar address and a signature.',
   },
   {
     title: 'Missing Stellar layer',
-    body: 'Stellar excels at payments and asset issuance — but lacks a native, high-performance storage rail.',
+    body: 'Stellar excels at payments and asset issuance — but lacks a native object-storage rail for dApps and vaults.',
   },
   {
     title: 'Emerging market demand',
@@ -53,47 +53,58 @@ const problems = [
 
 const features = [
   {
-    label: 'Encrypted',
-    body: 'End-to-end encryption with self-custodial ownership. Data is sharded across a global node network.',
+    label: 'Wallet identity',
+    body: 'Connect with Freighter, LOBSTR, Albedo, and other Stellar wallets. SEP-10 challenge signing issues a short-lived session — no passwords.',
   },
   {
-    label: 'Proven base',
-    body: 'Built on lessons from Filecoin, Storj, and Jackal Protocol, with high-performance architecture from Nunchi.',
+    label: 'Encrypted vault',
+    body: 'Client-side AES-GCM encryption, folders, search, trash with 30-day restore, and optional object versioning.',
   },
   {
-    label: 'Live apps',
-    body: 'Obsideo.io for storage distribution and SigeaCloud.io for intuitive web and mobile experiences.',
+    label: 'Pay in XLM',
+    body: '5 GB free tier, then Starter / Growth / Pro plans settled in native XLM. Soroban tracks quota and content hashes on Testnet.',
   },
   {
-    label: 'Hybrid speed',
-    body: 'Datacenter-speed access with distributed resilience and proof-of-retrievability.',
+    label: 'S3-shaped API',
+    body: 'HTTP /s3/v1 with list, put, ranged GET, multipart, lifecycle rules, soft-delete, presigned downloads, and revocable share grants.',
   },
   {
-    label: 'Multi-chain',
-    body: 'Designed for IBC and data outposts — interoperable across ecosystems, optimized for Stellar.',
+    label: 'Builder SDK',
+    body: 'evernet-sdk on npm — encrypt-and-upload, API keys, project pools, versioning, and lifecycle helpers for apps.',
   },
+]
+
+const liveNow = [
+  'Wallet vault at evernet.tech — folders, drag-and-drop, quota meter, passphrase or convenience encryption.',
+  'Public storage API with OpenAPI, soft-delete trash, batch delete, versioning, and lifecycle.',
+  'Soroban storage-market on Stellar Testnet for leases, quota, and content-hash registration.',
+  'XLM plan purchases verified on Horizon; Labs encrypted-notes demo at /labs/notes.',
+  'Published evernet-sdk (npm) for TypeScript apps and partner integrations.',
+]
+
+const nextUp = [
+  'Mainnet storage-market contract and production control plane.',
+  'Distributed data plane with stronger durability guarantees beyond the current blob backend.',
+  'Compliance-friendly audit logs and GDPR/MiCA-oriented options for regulated use cases.',
+  'Deeper ecosystem demos — identity vaults, media, and document workflows on Stellar.',
 ]
 
 const strategy = [
   {
-    title: 'Stellar integration',
-    body: 'Enable XLM and Stellar asset payments, Soroban contracts for leasing and escrow, and data availability oracles.',
+    title: 'Stellar-first payments',
+    body: 'Native XLM for capacity today; Soroban leasing and escrow as the on-chain control plane expands to Mainnet.',
   },
   {
     title: 'Ecosystem partnerships',
-    body: 'Expand collaboration with projects like Tanjira on Gno.land and new Stellar-based initiatives.',
+    body: 'Ship with storage, finance, and product teams — SigeaCloud, Obsideo, and builders across Stellar.',
   },
   {
-    title: 'Developer tools',
-    body: 'Ship SDKs, documentation, and grants for builders on Evernet + Stellar.',
+    title: 'Developer surface',
+    body: 'Docs, OpenAPI, evernet-sdk, API keys, and grants so apps can store encrypted objects without standing up their own stack.',
   },
   {
-    title: 'Community adoption',
-    body: 'Drive real utility through airdrops, storage bounties, and focused marketing.',
-  },
-  {
-    title: 'Mainnet roadmap',
-    body: 'Testnet expansion → security audits → mainnet launch within ~12 months.',
+    title: 'Community utility',
+    body: 'Real vault usage, storage bounties, and partner apps that make wallet-linked storage the default habit.',
   },
 ]
 
@@ -104,43 +115,34 @@ const alignment = [
   },
   {
     title: 'Interoperability & utility',
-    body: 'Adds persistent decentralized storage beyond Stellar’s payment rails.',
+    body: 'Adds persistent object storage beyond Stellar’s payment rails — same wallets, same signatures.',
   },
   {
     title: 'Developer empowerment',
-    body: 'Easy tools that accelerate dApp development on Stellar and Soroban.',
+    body: 'HTTP API + SDK that accelerate dApps on Stellar and Soroban without reinventing auth or encryption.',
   },
   {
     title: 'Open ecosystem',
-    body: 'Censorship-resistant infrastructure aligned with Stellar’s open network philosophy.',
+    body: 'Censorship-resistant, user-owned infrastructure aligned with Stellar’s open network philosophy.',
   },
   {
     title: 'Sustainability',
-    body: 'Efficient design minimizes waste versus proof-of-work-heavy alternatives.',
+    body: 'Control plane on Stellar; object bytes stay off-chain — efficient design versus proof-of-work-heavy alternatives.',
   },
 ]
 
-const techPlan = [
-  'Implement Stellar asset payments (XLM and custom tokens) for storage reservations.',
-  'Develop Soroban smart contracts for storage markets, renewals, and disputes.',
-  'Create bridges and oracles for cross-chain data referencing (Stellar ↔ Evernet).',
-  'Build demo dApps — document signing, media streaming, identity vaults.',
-  'Ship compliance-friendly options: GDPR/MiCA support and audit logs for regulated use cases.',
-]
-
 const milestones = [
-  { q: 'Q1', body: 'Soroban payment contracts and basic Stellar integration.' },
-  { q: 'Q2', body: 'End-to-end demo applications and testnet launch.' },
-  { q: 'Q3', body: 'Audits, optimizations, and public documentation.' },
-  { q: 'Q4', body: 'Mainnet readiness with Stellar as a primary payment rail.' },
+  { q: 'Now', body: 'Live vault, S3-shaped API, XLM plans, Testnet Soroban control plane, and evernet-sdk.' },
+  { q: 'Next', body: 'Mainnet contract deploy, production hardening, and partner app rollouts.' },
+  { q: 'Then', body: 'Distributed data plane, stronger durability proofs, and compliance tooling.' },
+  { q: 'Beyond', body: 'Evernet as the default data layer for Stellar finance, identity, and archival apps.' },
 ]
 
-const funding = [
-  { label: 'Engineering & Stellar/Soroban integration', pct: 50 },
-  { label: 'Security audits and testing', pct: 20 },
-  { label: 'Developer tools, SDKs, and documentation', pct: 15 },
-  { label: 'Testnet incentives and community programs', pct: 10 },
-  { label: 'Project management and reporting', pct: 5 },
+const plans = [
+  { label: 'Free', detail: '5 GB included with every wallet' },
+  { label: 'Starter', detail: '+10 GB · 5 XLM' },
+  { label: 'Growth', detail: '+50 GB · 20 XLM' },
+  { label: 'Pro', detail: '+200 GB · 60 XLM' },
 ]
 
 const partners = [
@@ -226,7 +228,7 @@ export default function Landing() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.75, delay: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
-            Secure, scalable, user-owned cloud infrastructure — with tokenized payments and global access.
+            Wallet-linked, client-encrypted object storage — open the vault or call the API, and pay for capacity in XLM.
           </motion.p>
           <motion.div
             className="hero-actions"
@@ -237,9 +239,9 @@ export default function Landing() {
             <Link className="btn btn-primary" to="/dashboard">
               Open storage vault
             </Link>
-            <a className="btn btn-ghost" href="#solution">
-              Explore the network
-            </a>
+            <Link className="btn btn-ghost" to="/docs">
+              Read the docs
+            </Link>
           </motion.div>
         </div>
       </section>
@@ -250,8 +252,8 @@ export default function Landing() {
             <p className="eyebrow">The gap</p>
             <h2>Storage that matches Stellar’s ambition.</h2>
             <p>
-              Centralized clouds create risk. Decentralized alternatives often struggle with
-              performance and payments. Evernet closes both gaps.
+              Centralized clouds create risk. Most decentralized alternatives ignore Stellar wallets and XLM.
+              Evernet closes both gaps with a vault and API you can use today.
             </p>
           </Reveal>
           <div className="problem-grid">
@@ -269,10 +271,10 @@ export default function Landing() {
         <div className="container">
           <Reveal className="section-head">
             <p className="eyebrow">Product</p>
-            <h2>S3-compatible. Encrypted. Decentralized.</h2>
+            <h2>S3-shaped. Encrypted. Wallet-native.</h2>
             <p>
-              High-performance storage with blockchain-native ownership — already live via Obsideo
-              and SigeaCloud.
+              A live vault, public HTTP API, and npm SDK — Stellar addresses for identity, XLM for capacity,
+              bytes encrypted before they leave the client.
             </p>
           </Reveal>
           <Reveal>
@@ -285,9 +287,41 @@ export default function Landing() {
               ))}
             </div>
             <p className="diff-line">
-              Key differentiators: high usability for non-crypto users, enterprise-grade SLAs, and
-              real-world data sovereignty.
+              Stellar is the control plane (auth, quota, content hashes). Object bytes stay off-chain —
+              fast to serve, simple to integrate, ready for a distributed data plane next.
             </p>
+          </Reveal>
+        </div>
+      </section>
+
+      <section className="section" id="live">
+        <div className="container">
+          <Reveal className="section-head">
+            <p className="eyebrow">Live today</p>
+            <h2>Ship against a working stack.</h2>
+            <p>
+              Testnet control plane and production vault/API surface — not a whitepaper demo.
+            </p>
+          </Reveal>
+          <div className="tech-list">
+            {liveNow.map((item, i) => (
+              <Reveal key={item} className="tech-item" delay={i * 0.05}>
+                <span className="tech-marker" aria-hidden="true">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <p>{item}</p>
+              </Reveal>
+            ))}
+          </div>
+          <Reveal>
+            <div className="markets-strip" aria-label="Quick links" style={{ marginTop: '2rem' }}>
+              <Link to="/dashboard">Open vault</Link>
+              <Link to="/docs">Docs &amp; OpenAPI</Link>
+              <Link to="/labs/notes">Labs · encrypted notes</Link>
+              <a href="https://www.npmjs.com/package/evernet-sdk" target="_blank" rel="noreferrer">
+                npm i evernet-sdk
+              </a>
+            </div>
           </Reveal>
         </div>
       </section>
@@ -340,7 +374,7 @@ export default function Landing() {
               <span>Stellar developers</span>
               <span>Emerging markets</span>
               <span>Enterprises</span>
-              <span>NFT & archival</span>
+              <span>NFT &amp; archival</span>
             </div>
           </Reveal>
           <div className="strategy-steps" style={{ marginTop: '2rem' }}>
@@ -362,8 +396,8 @@ export default function Landing() {
             <p className="eyebrow">Stellar alignment</p>
             <h2>Built to advance financial inclusion.</h2>
             <p>
-              Grant-funded Stellar integration unlocks tokenized storage payments, cross-border data
-              services, and low-cost access worldwide.
+              Wallet auth, XLM capacity, and Soroban leases turn storage into something Stellar users already
+              know how to pay for and control.
             </p>
           </Reveal>
           <Reveal>
@@ -383,14 +417,14 @@ export default function Landing() {
       <section className="section" id="technical">
         <div className="container">
           <Reveal className="section-head">
-            <p className="eyebrow">Integration plan</p>
-            <h2>From payments to Soroban markets.</h2>
+            <p className="eyebrow">What&apos;s next</p>
+            <h2>From Testnet product to Mainnet data layer.</h2>
             <p>
-              A phased technical path that pairs Evernet’s live storage stack with Stellar’s rails.
+              The vault and API are live. The roadmap hardens the control plane and expands the data plane.
             </p>
           </Reveal>
           <div className="tech-list">
-            {techPlan.map((item, i) => (
+            {nextUp.map((item, i) => (
               <Reveal key={item} className="tech-item" delay={i * 0.05}>
                 <span className="tech-marker" aria-hidden="true">
                   {String(i + 1).padStart(2, '0')}
@@ -406,10 +440,9 @@ export default function Landing() {
         <div className="container">
           <Reveal className="section-head">
             <p className="eyebrow">Roadmap</p>
-            <h2>Twelve months to mainnet readiness.</h2>
+            <h2>Shipped first. Scale next.</h2>
             <p>
-              Competitive edge: live product traction, proven tech foundation, and deep Stellar
-              integration.
+              Competitive edge: live product traction, a working Stellar integration, and a clear path to Mainnet.
             </p>
           </Reveal>
           <div className="timeline">
@@ -424,27 +457,26 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="section" id="funding">
+      <section className="section" id="pricing">
         <div className="container">
           <Reveal className="section-head">
-            <p className="eyebrow">Use of funds</p>
-            <h2>Grant capital that compounds the ecosystem.</h2>
+            <p className="eyebrow">Capacity</p>
+            <h2>Pay for storage the Stellar way.</h2>
             <p>
-              Allocation prioritizes engineering, audits, and developer enablement for the Stellar
-              community.
+              Every wallet unlocks a free tier. Expand with XLM — no cards, no custom token required.
             </p>
           </Reveal>
           <div className="fund-bars">
-            {funding.map((f, i) => (
+            {plans.map((f, i) => (
               <Reveal key={f.label} className="fund-row" delay={i * 0.05}>
                 <div className="fund-meta">
                   <span>{f.label}</span>
-                  <span>{f.pct}%</span>
+                  <span>{f.detail}</span>
                 </div>
                 <div className="fund-track">
                   <motion.div
                     className="fund-fill"
-                    style={{ width: `${f.pct}%` }}
+                    style={{ width: `${[35, 55, 75, 95][i]}%` }}
                     initial={reduce ? false : { scaleX: 0 }}
                     whileInView={{ scaleX: 1 }}
                     viewport={{ once: true }}
@@ -455,11 +487,11 @@ export default function Landing() {
             ))}
           </div>
           <Reveal className="monetize">
-            <h3>Monetization</h3>
+            <h3>For builders</h3>
             <ul>
-              <li>Token-based storage payments and staking incentives</li>
-              <li>Premium enterprise tiers and managed services</li>
-              <li>Revenue sharing with node operators and ecosystem partners</li>
+              <li>API keys (`evn_live_…`) and project soft-cap pools for apps</li>
+              <li>Presigned downloads and revocable share grants</li>
+              <li>Partner revenue paths as the node / data plane network grows</li>
             </ul>
           </Reveal>
         </div>
@@ -473,20 +505,20 @@ export default function Landing() {
             </p>
             <h2>Expand Stellar with a missing piece: data.</h2>
             <p>
-              Evernet is ready to collaborate with the Stellar community and deliver tangible utility
-              worldwide.
+              Connect a wallet, encrypt a file, or integrate the SDK — Evernet is ready for the Stellar
+              community today.
             </p>
             <div className="hero-actions">
               <Link className="btn btn-primary" to="/dashboard">
                 Open storage vault
               </Link>
-              <a className="btn btn-ghost" href="https://evernet.io" target="_blank" rel="noreferrer">
-                Visit Evernet.io
-              </a>
+              <Link className="btn btn-ghost" to="/docs">
+                Explore the API
+              </Link>
             </div>
           </Reveal>
           <footer className="footer">
-            <span>Evernet · Business strategy · July 2026</span>
+            <span>Evernet · evernet.tech · Stellar Testnet live</span>
             <span className="footer-partners">
               Partners:{' '}
               {partners.map((p, i) => (

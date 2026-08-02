@@ -386,10 +386,16 @@ p {
   margin-top: 0.5rem;
 }
 
-.markets-strip span {
+.markets-strip span,
+.markets-strip a {
   font-weight: 600;
   color: var(--ink);
   font-size: 1.05rem;
+  text-decoration: none;
+}
+
+.markets-strip a:hover {
+  color: var(--foam-deep);
 }
 
 /* —— Partners —— */
