@@ -1,37 +1,9 @@
-import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
 import { NetworkCanvas } from '../components/NetworkCanvas'
 import BrandMark from '../components/BrandMark'
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 28 },
-  visible: { opacity: 1, y: 0 },
-}
-
-function Reveal({
-  children,
-  className,
-  delay = 0,
-}: {
-  children: ReactNode
-  className?: string
-  delay?: number
-}) {
-  const reduce = useReducedMotion()
-  return (
-    <motion.div
-      className={className}
-      variants={fadeUp}
-      initial={reduce ? false : 'hidden'}
-      whileInView="visible"
-      viewport={{ once: true, amount: 0.25 }}
-      transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1], delay }}
-    >
-      {children}
-    </motion.div>
-  )
-}
+import { Reveal } from '../components/Reveal'
+import { HowItWorks } from '../components/HowItWorks'
 
 const problems = [
   {
@@ -192,6 +164,7 @@ export default function Landing() {
           </a>
           <nav className="nav-links" aria-label="Primary">
             <a href="#solution">Product</a>
+            <a href="#how-it-works">How it works</a>
             <a href="#partners">Partners</a>
             <a href="#strategy">Strategy</a>
             <a href="#stellar">Stellar</a>
@@ -293,6 +266,19 @@ export default function Landing() {
               fast to serve, simple to integrate, ready for a distributed data plane next.
             </p>
           </Reveal>
+        </div>
+      </section>
+
+      <section className="section how" id="how-it-works">
+        <div className="container">
+          <Reveal className="section-head">
+            <p className="eyebrow">How it works</p>
+            <h2>From wallet signature to on-chain receipt.</h2>
+            <p>
+              Four steps happen behind every upload — your keys and files never leave your device unencrypted.
+            </p>
+          </Reveal>
+          <HowItWorks />
         </div>
       </section>
 
