@@ -25,6 +25,7 @@ import {
   listVault,
   loginWithWallet,
   renameFolder,
+  restoreObject,
   revokeApiKey,
   sessionAddress,
   updateObject,
@@ -108,6 +109,7 @@ export default function Dashboard() {
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
+  const [showTrash, setShowTrash] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
@@ -167,7 +169,7 @@ export default function Dashboard() {
     }
     const [p, listing, keys, projectList] = await Promise.all([
       getProfile(),
-      listVault(),
+      listVault(showTrash ? { trash: 'only' } : {}),
       listApiKeys().catch(() => []),
       listProjects().catch(() => []),
     ])
@@ -177,7 +179,12 @@ export default function Dashboard() {
     setApiKeys(keys)
     setProjects(projectList)
     setAuthed(true)
-  }, [])
+  }, [showTrash])
+
+  useEffect(() => {
+    if (!authed) return
+    void refresh().catch(() => undefined)
+  }, [showTrash, authed, refresh])
 
   useEffect(() => {
     void (async () => {
@@ -222,10 +229,11 @@ export default function Dashboard() {
 
   const rows = useMemo<Row[]>(() => {
     const q = query.trim().toLowerCase()
-    if (q) {
+    if (showTrash || q) {
       return objects
         .filter(
           (o) =>
+            !q ||
             o.name.toLowerCase().includes(q) ||
             o.hash.includes(q) ||
             (o.folder || '').toLowerCase().includes(q),
@@ -250,7 +258,7 @@ export default function Dashboard() {
       ...folderRows.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
       ...fileRows.sort((a, b) => a.object.name.localeCompare(b.object.name, undefined, { sensitivity: 'base' })),
     ]
-  }, [objects, folders, currentFolder, query])
+  }, [objects, folders, currentFolder, query, showTrash])
 
   const selectedObj = objects.find((o) => o.hash === selected) ?? null
   const usage = profile?.usedBytes ?? 0
@@ -444,15 +452,33 @@ export default function Dashboard() {
     else if (download) void runDownload(download, pass)
   }
 
-  async function handleDelete(hash: string) {
+  async function handleDelete(hash: string, permanent = false) {
     setBusy(true)
     try {
-      await deleteObject(hash)
+      const res = await deleteObject(hash, { permanent: permanent || showTrash })
       if (selected === hash) setSelected(null)
       await refresh()
-      setToast('Object deleted · quota freed')
+      setToast(
+        res.permanent || permanent || showTrash
+          ? 'Object permanently deleted'
+          : 'Moved to trash · restore within 30 days',
+      )
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRestore(hash: string) {
+    setBusy(true)
+    try {
+      await restoreObject(hash)
+      if (selected === hash) setSelected(null)
+      await refresh()
+      setToast('Object restored')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Restore failed')
     } finally {
       setBusy(false)
     }
@@ -591,7 +617,11 @@ export default function Dashboard() {
       }
       setSelectedFolder(null)
       await refresh()
-      setToast('Folder deleted')
+      setToast(
+        count > 0 || recursive
+          ? 'Folder removed · files moved to trash (30 days)'
+          : 'Folder deleted',
+      )
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Delete folder failed')
     } finally {
@@ -771,32 +801,52 @@ export default function Dashboard() {
               <>
                 <button
                   type="button"
-                  className="dash-btn ghost"
+                  className={`dash-btn ghost${showTrash ? ' active' : ''}`}
                   disabled={busy}
                   onClick={() => {
-                    setNewFolderName('')
-                    setNewFolderOpen(true)
+                    setShowTrash((v) => !v)
+                    setSelected(null)
+                    setSelectedFolder(null)
+                    setQuery('')
                   }}
+                  title="Soft-deleted objects (30-day retention)"
                 >
-                  New folder
+                  {showTrash ? 'Exit trash' : 'Trash'}
                 </button>
-                <button
-                  type="button"
-                  className="dash-btn ghost"
-                  disabled={busy}
-                  onClick={() => folderInputRef.current?.click()}
-                  title="Upload a folder from your computer"
-                >
-                  Upload folder
-                </button>
-                <button
-                  type="button"
-                  className="dash-btn primary"
-                  disabled={busy}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Upload
-                </button>
+                {!showTrash && (
+                  <button
+                    type="button"
+                    className="dash-btn ghost"
+                    disabled={busy}
+                    onClick={() => {
+                      setNewFolderName('')
+                      setNewFolderOpen(true)
+                    }}
+                  >
+                    New folder
+                  </button>
+                )}
+                {!showTrash && (
+                  <button
+                    type="button"
+                    className="dash-btn ghost"
+                    disabled={busy}
+                    onClick={() => folderInputRef.current?.click()}
+                    title="Upload a folder from your computer"
+                  >
+                    Upload folder
+                  </button>
+                )}
+                {!showTrash && (
+                  <button
+                    type="button"
+                    className="dash-btn primary"
+                    disabled={busy}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Upload
+                  </button>
+                )}
                 <button type="button" className="dash-btn ghost" onClick={() => void openWalletProfile()}>
                   Wallet
                 </button>
@@ -883,18 +933,22 @@ export default function Dashboard() {
             ) : rows.length === 0 ? (
               <div className="dash-empty">
                 <h2>
-                  {searching
-                    ? 'No matches'
-                    : currentFolder
-                      ? 'This folder is empty'
-                      : 'Drop files or folders to encrypt & store'}
+                  {showTrash
+                    ? 'Trash is empty'
+                    : searching
+                      ? 'No matches'
+                      : currentFolder
+                        ? 'This folder is empty'
+                        : 'Drop files or folders to encrypt & store'}
                 </h2>
                 <p>
-                  {searching
-                    ? 'Try another name, hash, or folder path.'
-                    : `Uploads land in ${currentFolder || 'Vault'}. Create folders to keep credentials, media, and archives apart.`}
+                  {showTrash
+                    ? 'Deleted files stay here for 30 days, then are purged permanently.'
+                    : searching
+                      ? 'Try another name, hash, or folder path.'
+                      : `Uploads land in ${currentFolder || 'Vault'}. Create folders to keep credentials, media, and archives apart.`}
                 </p>
-                {!searching && (
+                {!searching && !showTrash && (
                   <div className="dash-empty-actions">
                     <button type="button" className="dash-btn primary" onClick={() => fileInputRef.current?.click()}>
                       Upload files
@@ -1049,17 +1103,35 @@ export default function Dashboard() {
                                 Go to folder
                               </button>
                             )}
-                            <button type="button" disabled={busy} onClick={() => void handleDownload(item)}>
-                              Download
-                            </button>
-                            <button
-                              type="button"
-                              className="danger"
-                              disabled={busy}
-                              onClick={() => void handleDelete(item.hash)}
-                            >
-                              Delete
-                            </button>
+                            {!showTrash && (
+                              <button type="button" disabled={busy} onClick={() => void handleDownload(item)}>
+                                Download
+                              </button>
+                            )}
+                            {showTrash ? (
+                              <>
+                                <button type="button" disabled={busy} onClick={() => void handleRestore(item.hash)}>
+                                  Restore
+                                </button>
+                                <button
+                                  type="button"
+                                  className="danger"
+                                  disabled={busy}
+                                  onClick={() => void handleDelete(item.hash, true)}
+                                >
+                                  Delete forever
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                className="danger"
+                                disabled={busy}
+                                onClick={() => void handleDelete(item.hash)}
+                              >
+                                Delete
+                              </button>
+                            )}
                           </td>
                         </tr>
                       )
@@ -1159,15 +1231,37 @@ export default function Dashboard() {
                   >
                     Move
                   </button>
-                  <button
-                    type="button"
-                    className="dash-btn ghost"
-                    disabled={busy}
-                    onClick={() => void handleShareObject(selectedObj)}
-                  >
-                    Create share link
-                  </button>
-                  {shareUrl && (
+                  {!showTrash && (
+                    <button
+                      type="button"
+                      className="dash-btn ghost"
+                      disabled={busy}
+                      onClick={() => void handleShareObject(selectedObj)}
+                    >
+                      Create share link
+                    </button>
+                  )}
+                  {showTrash ? (
+                    <>
+                      <button
+                        type="button"
+                        className="dash-btn primary"
+                        disabled={busy}
+                        onClick={() => void handleRestore(selectedObj.hash)}
+                      >
+                        Restore
+                      </button>
+                      <button
+                        type="button"
+                        className="dash-btn ghost danger"
+                        disabled={busy}
+                        onClick={() => void handleDelete(selectedObj.hash, true)}
+                      >
+                        Delete forever
+                      </button>
+                    </>
+                  ) : null}
+                  {shareUrl && !showTrash && (
                     <label>
                       Share URL (ciphertext · 7 days)
                       <input readOnly value={shareUrl} onFocus={(e) => e.target.select()} />

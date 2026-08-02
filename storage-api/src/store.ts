@@ -36,7 +36,12 @@ export type StoredObjectMeta = {
   registrationTx?: string
   /** Optional project billing pool that funded this upload. */
   projectId?: string
+  /** Soft-deleted (trash). Blob retained until hard delete or purge. */
+  deletedAt?: number
 }
+
+/** Soft-deleted objects are retained this long before automatic purge. */
+export const TRASH_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
 type VaultLedger = {
   owner: string
@@ -193,14 +198,37 @@ export async function setProfile(profile: Profile): Promise<void> {
   await driver.putJson(profileKey(profile.address), profile)
 }
 
-export async function listObjects(owner: string): Promise<StoredObjectMeta[]> {
-  const vault = await loadVault(owner)
-  return Object.values(vault.objects).sort((a, b) => b.createdAt - a.createdAt)
+export type ListObjectsOpts = {
+  /** default: active only · true: active+trash · 'only': trash only */
+  trash?: boolean | 'only'
 }
 
-export async function getObject(owner: string, hash: string): Promise<StoredObjectMeta | null> {
+function isTrashed(obj: StoredObjectMeta): boolean {
+  return Boolean(obj.deletedAt)
+}
+
+export async function listObjects(
+  owner: string,
+  opts: ListObjectsOpts = {},
+): Promise<StoredObjectMeta[]> {
+  await purgeExpiredTrash(owner).catch(() => undefined)
   const vault = await loadVault(owner)
-  return vault.objects[hash] ?? null
+  let rows = Object.values(vault.objects)
+  if (opts.trash === 'only') rows = rows.filter(isTrashed)
+  else if (opts.trash !== true) rows = rows.filter((o) => !isTrashed(o))
+  return rows.sort((a, b) => b.createdAt - a.createdAt)
+}
+
+export async function getObject(
+  owner: string,
+  hash: string,
+  opts: { includeTrash?: boolean } = {},
+): Promise<StoredObjectMeta | null> {
+  const vault = await loadVault(owner)
+  const obj = vault.objects[hash] ?? null
+  if (!obj) return null
+  if (isTrashed(obj) && !opts.includeTrash) return null
+  return obj
 }
 
 export async function paymentSeen(hash: string): Promise<boolean> {
@@ -235,6 +263,7 @@ export async function ensureFolder(owner: string, path: string): Promise<string[
 function listFoldersFrom(vault: VaultLedger): string[] {
   const set = new Set(vault.folders)
   for (const obj of Object.values(vault.objects)) {
+    if (isTrashed(obj)) continue
     let cursor = obj.folder
     while (cursor) {
       set.add(cursor)
@@ -292,33 +321,34 @@ export async function deleteFolder(
   owner: string,
   pathRaw: string,
   recursive: boolean,
-): Promise<{ folders: string[]; deletedHashes: string[] }> {
+): Promise<{ folders: string[]; trashedHashes: string[]; deletedHashes: string[] }> {
   const path = normalizeFolderPath(pathRaw)
   if (!path) throw new Error('Cannot delete the vault root')
 
   const vault = await loadVault(owner)
   const contained = Object.values(vault.objects).filter(
-    (o) => o.folder === path || isUnderFolder(o.folder, path),
+    (o) => !o.deletedAt && (o.folder === path || isUnderFolder(o.folder, path)),
   )
 
   if (contained.length && !recursive) {
     throw new Error('Folder is not empty — delete its contents first, or use recursive delete')
   }
 
-  const deletedHashes: string[] = []
+  const trashedHashes: string[] = []
   const profile = await getProfile(owner)
+  const now = Date.now()
   for (const obj of contained) {
     profile.usedBytes = Math.max(0, profile.usedBytes - obj.size)
     profile.objectCount = Math.max(0, profile.objectCount - 1)
-    delete vault.objects[obj.hash]
-    deletedHashes.push(obj.hash)
-    await driver.delBytes(obj.blobRef).catch(() => undefined)
+    vault.objects[obj.hash] = { ...obj, deletedAt: now }
+    trashedHashes.push(obj.hash)
   }
 
   vault.folders = vault.folders.filter((f) => f !== path && !isUnderFolder(f, path))
   await saveVault(vault)
-  if (deletedHashes.length) await setProfile(profile)
-  return { folders: listFoldersFrom(vault), deletedHashes }
+  if (trashedHashes.length) await setProfile(profile)
+  // deletedHashes kept for API compatibility (soft-delete → same list)
+  return { folders: listFoldersFrom(vault), trashedHashes, deletedHashes: trashedHashes }
 }
 
 export async function registerObjectLocal(meta: StoredObjectMeta): Promise<Profile> {
@@ -368,20 +398,81 @@ export async function patchObjectMeta(
   return next
 }
 
+/** Move object to trash (frees quota; blob kept for TRASH_TTL_MS). */
+export async function trashObject(owner: string, hash: string): Promise<Profile> {
+  const vault = await loadVault(owner)
+  const meta = vault.objects[hash]
+  if (!meta) throw new Error('Object missing')
+  if (meta.deletedAt) return getProfile(owner)
+
+  const profile = await getProfile(owner)
+  profile.usedBytes = Math.max(0, profile.usedBytes - meta.size)
+  profile.objectCount = Math.max(0, profile.objectCount - 1)
+  vault.objects[hash] = { ...meta, deletedAt: Date.now() }
+  await saveVault(vault)
+  await setProfile(profile)
+  return profile
+}
+
+/** Restore a trashed object (requires free quota). */
+export async function restoreObject(owner: string, hash: string): Promise<StoredObjectMeta> {
+  const vault = await loadVault(owner)
+  const meta = vault.objects[hash]
+  if (!meta) throw new Error('Object missing')
+  if (!meta.deletedAt) return meta
+
+  const profile = await getProfile(owner)
+  if (profile.usedBytes + meta.size > profile.quotaBytes) {
+    const err = new Error('Insufficient quota to restore') as Error & { status: number }
+    err.status = 402
+    throw err
+  }
+  profile.usedBytes += meta.size
+  profile.objectCount += 1
+  const { deletedAt: _deletedAt, ...rest } = meta
+  const restored: StoredObjectMeta = { ...rest }
+  vault.objects[hash] = restored
+  if (restored.folder) rememberFolder(vault, restored.folder)
+  await saveVault(vault)
+  await setProfile(profile)
+  return restored
+}
+
+/** Permanently delete object + blob. */
 export async function deleteObjectLocal(owner: string, hash: string): Promise<Profile> {
   const vault = await loadVault(owner)
   const meta = vault.objects[hash]
   if (!meta) throw new Error('Object missing')
 
   const profile = await getProfile(owner)
-  profile.usedBytes = Math.max(0, profile.usedBytes - meta.size)
-  profile.objectCount = Math.max(0, profile.objectCount - 1)
+  if (!meta.deletedAt) {
+    profile.usedBytes = Math.max(0, profile.usedBytes - meta.size)
+    profile.objectCount = Math.max(0, profile.objectCount - 1)
+  }
 
   delete vault.objects[hash]
   await saveVault(vault)
   await driver.delBytes(meta.blobRef).catch(() => undefined)
   await setProfile(profile)
   return profile
+}
+
+/** Hard-delete trash items older than TRASH_TTL_MS. Returns purged hashes. */
+export async function purgeExpiredTrash(owner: string): Promise<string[]> {
+  const vault = await loadVault(owner)
+  const cutoff = Date.now() - TRASH_TTL_MS
+  const expired = Object.values(vault.objects).filter(
+    (o) => o.deletedAt && o.deletedAt < cutoff,
+  )
+  if (!expired.length) return []
+  const purged: string[] = []
+  for (const meta of expired) {
+    delete vault.objects[meta.hash]
+    purged.push(meta.hash)
+    await driver.delBytes(meta.blobRef).catch(() => undefined)
+  }
+  await saveVault(vault)
+  return purged
 }
 
 export async function creditPurchaseLocal(

@@ -401,7 +401,8 @@ export default function Docs() {
             <p>
               Toward wallet-native cloud storage on Stellar, Evernet exposes a JSON <strong>S3-shaped</strong> surface
               under <code>/s3/v1</code> (not full AWS XML compatibility yet). Same vault, auth, quota, and encryption
-              model — with keys, multipart, ranged GET, HEAD/copy, presigned downloads, and revocable share grants.
+              model — with keys, multipart, ranged GET, HEAD/copy, soft-delete trash, batch delete, presigned downloads,
+              and revocable share grants.
             </p>
             <div className="docs-table-wrap">
               <table className="docs-table">
@@ -416,10 +417,11 @@ export default function Docs() {
                   <tr>
                     <td>List by prefix</td>
                     <td>
-                      <code>GET /s3/v1/objects?prefix=&amp;delimiter=/</code>
+                      <code>GET /s3/v1/objects?prefix=&amp;delimiter=/&amp;trash=</code>
                     </td>
                     <td>
-                      Returns <code>contents</code> + <code>commonPrefixes</code>
+                      Returns <code>contents</code> + <code>commonPrefixes</code>;{' '}
+                      <code>trash=only</code> lists soft-deleted keys
                     </td>
                   </tr>
                   <tr>
@@ -448,11 +450,31 @@ export default function Docs() {
                     </td>
                   </tr>
                   <tr>
-                    <td>Delete</td>
+                    <td>Delete / trash</td>
                     <td>
                       <code>DELETE /s3/v1/object?key=…</code>
                     </td>
-                    <td>Frees wallet (+ project) quota</td>
+                    <td>
+                      Soft-delete (30d); <code>?permanent=true</code> hard-deletes
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Restore</td>
+                    <td>
+                      <code>POST /s3/v1/restore</code>
+                    </td>
+                    <td>
+                      Body <code>key</code> or <code>hash</code> — requires free quota
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Batch delete</td>
+                    <td>
+                      <code>POST /s3/v1/delete</code>
+                    </td>
+                    <td>
+                      <code>{`{ keys[], prefix?, permanent? }`}</code>
+                    </td>
                   </tr>
                   <tr>
                     <td>Multipart</td>
@@ -492,10 +514,18 @@ curl -X POST ${API_BASE}/s3/v1/presign \\
   -d '{"key":"docs/report.bin","expiresInSec":3600}'`}</code>
             </pre>
             <p>
-              Probe: <a href={`${API_BASE}/s3/v1`} target="_blank" rel="noreferrer">{`${API_BASE}/s3/v1`}</a>. SDK
-              helpers: <code>s3Put</code>, <code>s3Get</code>, <code>s3Head</code>, <code>s3Copy</code>,{' '}
-              <code>s3MultipartPut</code>, <code>s3Presign</code>, <code>s3CreateGrant</code>. Install{' '}
-              <code>evernet-sdk@0.3.0</code>+.
+              Probe:{' '}
+              <a href={`${API_BASE}/s3/v1`} target="_blank" rel="noreferrer">
+                {`${API_BASE}/s3/v1`}
+              </a>
+              · status:{' '}
+              <a href={`${API_BASE}/status`} target="_blank" rel="noreferrer">
+                {`${API_BASE}/status`}
+              </a>
+              . SDK helpers: <code>s3Put</code>, <code>s3Get</code>, <code>s3Head</code>, <code>s3Copy</code>,{' '}
+              <code>s3Delete</code>, <code>s3Restore</code>, <code>s3DeleteBatch</code>, <code>s3MultipartPut</code>,{' '}
+              <code>s3Presign</code>, <code>s3CreateGrant</code>, <code>getStatus</code>. Install{' '}
+              <code>evernet-sdk@0.4.0</code>+.
             </p>
           </section>
 
@@ -946,17 +976,19 @@ async function upload(token: string, bytes: Blob, name: string, folder = '') {
               <div>
                 <dt>Is this Mainnet production storage?</dt>
                 <dd>
-                  Testnet is the primary network today (<code>GET /config/public</code> reports{' '}
-                  <code>network: testnet</code>). Mainnet payments are supported when your wallet and the treasury are
-                  configured for Public Network. A broader decentralized node mesh remains on the roadmap.
+                  Check <code>GET /status</code> for <code>mainnet.readiness</code>. Testnet is the primary control
+                  plane today. Mainnet XLM payments work when wallet + treasury are on Public Network; a Public-network
+                  storage-market contract is required for on-chain quota there. Bytes stay off-chain (Blob). A broader
+                  decentralized node mesh remains on the roadmap.
                 </dd>
               </div>
               <div>
                 <dt>Can my app use Evernet like S3?</dt>
                 <dd>
                   For encrypted object storage tied to a Stellar wallet — yes, via the{' '}
-                  <a href="#api">Developer API</a> and <a href="#sdk">evernet-sdk</a>. It is not a SQL database or a
-                  drop-in AWS SDK. Auth: wallet JWT or API keys; optional project soft caps for metering.
+                  <a href="#cloud">S3-shaped API</a>, <a href="#api">Developer API</a>, and{' '}
+                  <a href="#sdk">evernet-sdk</a>. It is not a SQL database or a drop-in AWS SDK. Auth: wallet JWT or API
+                  keys; optional project soft caps for metering. Deletes soft-trash for 30 days by default.
                 </dd>
               </div>
             </dl>

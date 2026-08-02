@@ -146,8 +146,14 @@ export class EvernetClient {
     return this.json('/usage')
   }
 
-  async list(): Promise<VaultListing> {
-    const res = await this.json<{ objects: EvernetObject[]; folders?: string[] }>('/objects')
+  async list(opts: { trash?: boolean | 'only' } = {}): Promise<VaultListing> {
+    const qs = new URLSearchParams()
+    if (opts.trash === true) qs.set('trash', 'true')
+    else if (opts.trash === 'only') qs.set('trash', 'only')
+    const q = qs.toString()
+    const res = await this.json<{ objects: EvernetObject[]; folders?: string[] }>(
+      `/objects${q ? `?${q}` : ''}`,
+    )
     return {
       objects: (res.objects || []).map((o) => ({ ...o, folder: o.folder || '' })),
       folders: res.folders || [],
@@ -223,15 +229,21 @@ export class EvernetClient {
 
   // —— S3-shaped cloud surface (`/s3/v1`) ——
 
-  async s3List(opts: { prefix?: string; delimiter?: string } = {}) {
+  async s3List(
+    opts: { prefix?: string; delimiter?: string; trash?: boolean | 'only' } = {},
+  ) {
     const qs = new URLSearchParams()
     if (opts.prefix) qs.set('prefix', opts.prefix)
     if (opts.delimiter !== undefined) qs.set('delimiter', opts.delimiter)
+    if (opts.trash === true) qs.set('trash', 'true')
+    else if (opts.trash === 'only') qs.set('trash', 'only')
     const q = qs.toString()
     return this.json<{
       contents: Array<{ key: string; hash: string; size: number; lastModified: number; mimeType: string }>
       commonPrefixes: string[]
       keyCount: number
+      trash?: boolean | 'only'
+      trashTtlMs?: number
     }>(`/s3/v1/objects${q ? `?${q}` : ''}`)
   }
 
@@ -281,11 +293,56 @@ export class EvernetClient {
     return res.blob()
   }
 
-  async s3Delete(key: string) {
-    return this.json<{ ok: boolean; profile: EvernetProfile }>(
-      `/s3/v1/object?key=${encodeURIComponent(key)}`,
-      { method: 'DELETE' },
-    )
+  async s3Delete(key: string, opts: { permanent?: boolean } = {}) {
+    const qs = new URLSearchParams({ key })
+    if (opts.permanent) qs.set('permanent', 'true')
+    return this.json<{
+      ok: boolean
+      trashed?: boolean
+      permanent?: boolean
+      trashTtlMs?: number
+      profile: EvernetProfile
+    }>(`/s3/v1/object?${qs}`, { method: 'DELETE' })
+  }
+
+  async s3Restore(input: { key?: string; hash?: string }) {
+    return this.json<{
+      ok: boolean
+      key: string
+      object: EvernetObject
+      profile: EvernetProfile
+      folders: string[]
+    }>('/s3/v1/restore', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  async s3DeleteBatch(input: {
+    keys?: string[]
+    prefix?: string
+    permanent?: boolean
+  }) {
+    return this.json<{
+      ok: boolean
+      deleted: number
+      trashed: number
+      permanent: boolean
+      trashTtlMs: number
+      profile: EvernetProfile
+      folders: string[]
+    }>('/s3/v1/delete', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  async getStatus() {
+    return this.json<{
+      ok: boolean
+      apiVersion: string
+      s3Version: string
+      network: string
+      storageDriver: string
+      onChain: boolean
+      trashTtlMs: number
+      mainnet: { readiness: string; notes: string }
+      capabilities: Record<string, boolean>
+    }>('/status')
   }
 
   async s3Presign(input: { key?: string; hash?: string; expiresInSec?: number }) {
@@ -468,9 +525,23 @@ export class EvernetClient {
     })
   }
 
-  async deleteObject(hash: string): Promise<EvernetProfile> {
-    const res = await this.json<{ profile: EvernetProfile }>(`/objects/${hash}`, { method: 'DELETE' })
-    return res.profile
+  async deleteObject(hash: string, opts: { permanent?: boolean } = {}): Promise<{
+    profile: EvernetProfile
+    trashed?: boolean
+    permanent?: boolean
+    trashTtlMs?: number
+  }> {
+    const qs = opts.permanent ? '?permanent=true' : ''
+    return this.json(`/objects/${hash}${qs}`, { method: 'DELETE' })
+  }
+
+  async restoreObject(hash: string) {
+    return this.json<{
+      ok: boolean
+      object: EvernetObject
+      folders: string[]
+      profile: EvernetProfile
+    }>(`/objects/${hash}/restore`, { method: 'POST' })
   }
 
   async listFolders(): Promise<string[]> {

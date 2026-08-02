@@ -25,13 +25,16 @@ export function parseObjectKey(key: unknown): { folder: string; name: string } {
 export function findByKey(
   objects: StoredObjectMeta[],
   key: string,
+  opts: { includeTrash?: boolean } = {},
 ): StoredObjectMeta | undefined {
   const parsed = parseObjectKey(key)
-  return objects.find(
-    (o) =>
+  return objects.find((o) => {
+    if (o.deletedAt && !opts.includeTrash) return false
+    return (
       normalizeFolderPath(o.folder || '') === parsed.folder &&
-      normalizeFileName(o.name) === parsed.name,
-  )
+      normalizeFileName(o.name) === parsed.name
+    )
+  })
 }
 
 /** S3-style list with optional prefix + delimiter (usually `/`). */

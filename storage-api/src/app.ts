@@ -34,6 +34,7 @@ import { publicObject, publicObjects } from './publicMeta.js'
 import { REQUESTS_PER_MINUTE, rateLimit } from './ratelimit.js'
 import { s3Router } from './s3.js'
 import {
+  TRASH_TTL_MS,
   createFolder,
   deleteFolder,
   deleteObjectLocal,
@@ -42,7 +43,10 @@ import {
   listObjects,
   readBlob,
   patchObjectMeta,
+  purgeExpiredTrash,
   renameFolder,
+  restoreObject,
+  trashObject,
   type StoredObjectMeta,
 } from './store.js'
 
@@ -118,6 +122,7 @@ app.get('/', (_req, res) => {
     cloud: 'https://evernet.tech/docs#cloud',
     openapi: '/openapi.json',
     health: '/health',
+    status: '/status',
     config: '/config/public',
     s3: '/s3/v1',
   })
@@ -138,6 +143,50 @@ app.get('/health', (_req, res) => {
     contractId: config.contractId || null,
     treasury: config.treasuryPublic,
     storage: driver.name,
+  })
+})
+
+/** Public readiness / capability status (no auth). */
+app.get('/status', (_req, res) => {
+  const network = config.network
+  const onChain = onChainEnabled()
+  res.json({
+    ok: true,
+    apiVersion: API_VERSION,
+    s3Version: '3',
+    network,
+    storageDriver: driver.name,
+    onChain,
+    contractId: config.contractId || null,
+    treasury: config.treasuryPublic,
+    trashTtlMs: TRASH_TTL_MS,
+    capabilities: {
+      s3Shaped: true,
+      softDelete: true,
+      batchDelete: true,
+      multipart: true,
+      presignedGet: true,
+      shareGrants: true,
+      rangedGet: true,
+      ifNoneMatch: true,
+    },
+    mainnet: {
+      paymentsSupported: true,
+      storageContractDeployed: network === 'public' && onChain,
+      readiness:
+        network === 'public' && onChain
+          ? 'mainnet-control-plane'
+          : network === 'public'
+            ? 'mainnet-payments-offchain-storage'
+            : 'testnet',
+      notes:
+        'Stellar is the control plane (auth, quota/lease hashes). Object bytes stay off-chain (Vercel Blob). Full Mainnet production requires a Public-network storage-market contract + funded treasury.',
+    },
+    docs: {
+      cloud: 'https://evernet.tech/docs#cloud',
+      networks: 'https://evernet.tech/docs#networks',
+      openapi: '/openapi.json',
+    },
   })
 })
 
@@ -310,11 +359,19 @@ app.delete('/projects/:id', requireWallet, async (req: AuthedRequest, res) => {
 
 app.get('/objects', requireWallet, async (req: AuthedRequest, res) => {
   try {
+    const trashQ = String(req.query.trash || '')
+    const trash: boolean | 'only' =
+      trashQ === '1' || trashQ === 'true' ? true : trashQ === 'only' ? 'only' : false
     const [objects, folders] = await Promise.all([
-      listObjects(req.wallet!),
+      listObjects(req.wallet!, { trash }),
       listFolders(req.wallet!),
     ])
-    res.json({ objects: publicObjects(objects), folders })
+    res.json({
+      objects: publicObjects(objects),
+      folders,
+      trash,
+      trashTtlMs: TRASH_TTL_MS,
+    })
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'List failed' })
   }
@@ -361,13 +418,8 @@ app.delete('/folders', requireWallet, async (req: AuthedRequest, res) => {
     const recursive =
       String(req.query.recursive || req.body?.recursive || 'false').toLowerCase() === 'true'
     const result = await deleteFolder(req.wallet!, path, recursive)
-    // Best-effort on-chain cleanup for recursively deleted objects
-    await Promise.all(
-      result.deletedHashes.map((hash) =>
-        deleteObjectOnChain({ owner: req.wallet!, hashHex: hash }).catch(() => undefined),
-      ),
-    )
-    res.json({ ok: true, ...result })
+    // Soft-delete: no on-chain cleanup until permanent purge
+    res.json({ ok: true, trashTtlMs: TRASH_TTL_MS, ...result })
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Delete folder failed' })
   }
@@ -451,15 +503,73 @@ app.patch('/objects/:hash', requireWallet, async (req: AuthedRequest, res) => {
 app.delete('/objects/:hash', requireWallet, async (req: AuthedRequest, res) => {
   try {
     const hash = String(req.params.hash)
-    const existing = await getObject(req.wallet!, hash)
-    const profile = await deleteObjectLocal(req.wallet!, hash)
-    if (existing?.projectId) {
+    const permanent =
+      String(req.query.permanent || '').toLowerCase() === 'true' ||
+      String(req.query.permanent || '') === '1'
+    const existing =
+      (await getObject(req.wallet!, hash)) ||
+      (await getObject(req.wallet!, hash, { includeTrash: true }))
+    if (!existing) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    if (permanent || existing.deletedAt) {
+      const profile = await deleteObjectLocal(req.wallet!, hash)
+      if (existing.projectId && !existing.deletedAt) {
+        await debitProjectUpload(existing.projectId, existing.size).catch(() => undefined)
+      }
+      await deleteObjectOnChain({ owner: req.wallet!, hashHex: hash }).catch(() => undefined)
+      res.json({
+        ok: true,
+        permanent: true,
+        profile,
+        folders: await listFolders(req.wallet!),
+      })
+      return
+    }
+    const profile = await trashObject(req.wallet!, hash)
+    if (existing.projectId) {
       await debitProjectUpload(existing.projectId, existing.size).catch(() => undefined)
     }
-    await deleteObjectOnChain({ owner: req.wallet!, hashHex: hash })
-    res.json({ ok: true, profile, folders: await listFolders(req.wallet!) })
+    res.json({
+      ok: true,
+      trashed: true,
+      trashTtlMs: TRASH_TTL_MS,
+      profile,
+      folders: await listFolders(req.wallet!),
+    })
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Delete failed' })
+  }
+})
+
+app.post('/objects/:hash/restore', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    const hash = String(req.params.hash)
+    const object = await restoreObject(req.wallet!, hash)
+    res.json({
+      ok: true,
+      object: publicObject(object),
+      folders: await listFolders(req.wallet!),
+      profile: await getMergedProfile(req.wallet!),
+    })
+  } catch (err) {
+    const e = err as Error & { status?: number }
+    res.status(e.status || 400).json({ error: e.message || 'Restore failed' })
+  }
+})
+
+app.post('/trash/purge', requireWallet, async (req: AuthedRequest, res) => {
+  try {
+    const purged = await purgeExpiredTrash(req.wallet!)
+    await Promise.all(
+      purged.map((hash) =>
+        deleteObjectOnChain({ owner: req.wallet!, hashHex: hash }).catch(() => undefined),
+      ),
+    )
+    res.json({ ok: true, purged: purged.length, hashes: purged })
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Purge failed' })
   }
 })
 

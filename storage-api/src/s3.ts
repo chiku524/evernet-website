@@ -21,11 +21,15 @@ import { findByKey, listByPrefix, objectKey, parseObjectKey } from './objectKey.
 import { createPresignToken, verifyPresignToken } from './presign.js'
 import { publicObject } from './publicMeta.js'
 import {
+  TRASH_TTL_MS,
   deleteObjectLocal,
   getObject,
   listFolders,
   listObjects,
+  purgeExpiredTrash,
   readBlob,
+  restoreObject,
+  trashObject,
 } from './store.js'
 import { deleteObjectOnChain, getMergedProfile } from './soroban.js'
 import { debitProjectUpload } from './projects.js'
@@ -96,10 +100,16 @@ async function sendObjectBytes(
   res: Response,
   meta: Awaited<ReturnType<typeof getObject>>,
   rangeHeader?: string,
-  opts?: { cacheMaxAge?: number },
+  opts?: { cacheMaxAge?: number; ifNoneMatch?: string },
 ) {
   if (!meta) {
     res.status(404).json({ error: 'Not found' })
+    return
+  }
+  const etag = `"${meta.hash}"`
+  if (opts?.ifNoneMatch && opts.ifNoneMatch.replace(/W\//, '') === etag) {
+    setObjectHeaders(res, meta, opts)
+    res.status(304).end()
     return
   }
   const blob = await readBlob(meta)
@@ -128,19 +138,22 @@ export const s3Router = Router()
 s3Router.get('/', (_req, res) => {
   res.json({
     name: 'Evernet S3-shaped API',
-    version: '2',
+    version: '3',
     notes:
-      'JSON S3-shaped object API (not full AWS XML). Multipart, ranged GET, HEAD/copy, presigned + revocable share grants.',
+      'JSON S3-shaped API. Soft-delete trash (30d), batch delete, multipart, ranged GET, HEAD/copy, shares.',
     maxSimplePutBytes: 80 * 1024 * 1024,
     maxPartBytes: MULTIPART_PART_MAX,
     maxParts: MULTIPART_MAX_PARTS,
+    trashTtlMs: TRASH_TTL_MS,
     endpoints: {
-      list: 'GET /s3/v1/objects?prefix=&delimiter=/',
+      list: 'GET /s3/v1/objects?prefix=&delimiter=/&trash=',
       put: 'PUT /s3/v1/object?key=',
-      get: 'GET /s3/v1/object?key= (Range supported)',
+      get: 'GET /s3/v1/object?key= (Range + If-None-Match)',
       head: 'HEAD /s3/v1/object?key=',
       copy: 'POST /s3/v1/copy',
-      delete: 'DELETE /s3/v1/object?key=',
+      delete: 'DELETE /s3/v1/object?key=&permanent=',
+      restore: 'POST /s3/v1/restore',
+      deleteBatch: 'POST /s3/v1/delete',
       multipartCreate: 'POST /s3/v1/multipart',
       multipartPart: 'PUT /s3/v1/multipart/:uploadId/:partNumber',
       multipartComplete: 'POST /s3/v1/multipart/:uploadId/complete',
@@ -196,7 +209,10 @@ s3Router.use(requireWallet)
 
 s3Router.get('/objects', async (req: AuthedRequest, res) => {
   try {
-    const objects = await listObjects(req.wallet!)
+    const trashQ = String(req.query.trash || '')
+    const trash: boolean | 'only' =
+      trashQ === '1' || trashQ === 'true' ? true : trashQ === 'only' ? 'only' : false
+    const objects = await listObjects(req.wallet!, { trash })
     const listed = listByPrefix(objects, {
       prefix: String(req.query.prefix || ''),
       delimiter: req.query.delimiter === undefined ? '/' : String(req.query.delimiter),
@@ -206,6 +222,8 @@ s3Router.get('/objects', async (req: AuthedRequest, res) => {
       keyCount: listed.contents.length,
       prefix: String(req.query.prefix || ''),
       delimiter: req.query.delimiter === undefined ? '/' : String(req.query.delimiter),
+      trash,
+      trashTtlMs: TRASH_TTL_MS,
     })
   } catch (err) {
     sendErr(res, err, 'List failed')
@@ -251,7 +269,9 @@ s3Router.get('/object', async (req: AuthedRequest, res) => {
   try {
     const key = String(req.query.key || '')
     const meta = findByKey(await listObjects(req.wallet!), key)
-    await sendObjectBytes(res, meta ?? null, req.headers.range)
+    await sendObjectBytes(res, meta ?? null, req.headers.range, {
+      ifNoneMatch: req.headers['if-none-match'],
+    })
   } catch (err) {
     sendErr(res, err, 'Get failed')
   }
@@ -375,19 +395,170 @@ s3Router.delete('/grants/:id', async (req: AuthedRequest, res) => {
 s3Router.delete('/object', async (req: AuthedRequest, res) => {
   try {
     const key = String(req.query.key || '')
-    const meta = findByKey(await listObjects(req.wallet!), key)
+    const permanent =
+      String(req.query.permanent || '').toLowerCase() === 'true' ||
+      String(req.query.permanent || '') === '1'
+    const active = findByKey(await listObjects(req.wallet!), key)
+    const trashed = permanent
+      ? findByKey(await listObjects(req.wallet!, { trash: 'only' }), key, { includeTrash: true })
+      : undefined
+    const meta = active || trashed
     if (!meta) {
       res.status(404).json({ error: 'Not found' })
       return
     }
-    const profile = await deleteObjectLocal(req.wallet!, meta.hash)
+    if (permanent || meta.deletedAt) {
+      const profile = await deleteObjectLocal(req.wallet!, meta.hash)
+      if (meta.projectId && !meta.deletedAt) {
+        await debitProjectUpload(meta.projectId, meta.size).catch(() => undefined)
+      }
+      await deleteObjectOnChain({ owner: req.wallet!, hashHex: meta.hash }).catch(() => undefined)
+      res.json({
+        ok: true,
+        key,
+        permanent: true,
+        profile,
+        folders: await listFolders(req.wallet!),
+      })
+      return
+    }
+    const profile = await trashObject(req.wallet!, meta.hash)
     if (meta.projectId) {
       await debitProjectUpload(meta.projectId, meta.size).catch(() => undefined)
     }
-    await deleteObjectOnChain({ owner: req.wallet!, hashHex: meta.hash })
-    res.json({ ok: true, key, profile, folders: await listFolders(req.wallet!) })
+    res.json({
+      ok: true,
+      key,
+      trashed: true,
+      trashTtlMs: TRASH_TTL_MS,
+      profile,
+      folders: await listFolders(req.wallet!),
+    })
   } catch (err) {
     sendErr(res, err, 'Delete failed')
+  }
+})
+
+s3Router.post('/restore', async (req: AuthedRequest, res) => {
+  try {
+    const owner = req.wallet!
+    let hash = String(req.body?.hash || '')
+    if (!hash && req.body?.key) {
+      const meta = findByKey(await listObjects(owner, { trash: 'only' }), String(req.body.key), {
+        includeTrash: true,
+      })
+      if (!meta) {
+        res.status(404).json({ error: 'Not found in trash' })
+        return
+      }
+      hash = meta.hash
+    }
+    if (!hash) {
+      res.status(400).json({ error: 'hash or key required' })
+      return
+    }
+    const object = await restoreObject(owner, hash)
+    res.json({
+      ok: true,
+      key: objectKey(object),
+      object: publicObject(object),
+      folders: await listFolders(owner),
+      profile: await getMergedProfile(owner),
+    })
+  } catch (err) {
+    sendErr(res, err, 'Restore failed')
+  }
+})
+
+s3Router.post('/delete', async (req: AuthedRequest, res) => {
+  try {
+    const owner = req.wallet!
+    const permanent =
+      String(req.body?.permanent || '').toLowerCase() === 'true' || req.body?.permanent === true
+    const keys = Array.isArray(req.body?.keys)
+      ? (req.body.keys as unknown[]).map(String)
+      : []
+    const prefix = req.body?.prefix != null ? String(req.body.prefix) : ''
+    const targets = new Map<
+      string,
+      { hash: string; size: number; projectId?: string; deletedAt?: number }
+    >()
+
+    const active = await listObjects(owner)
+    const trashOnly = permanent || keys.length ? await listObjects(owner, { trash: 'only' }) : []
+    const pool = permanent ? [...active, ...trashOnly] : active
+
+    if (prefix) {
+      const listed = listByPrefix(pool, { prefix, delimiter: '' })
+      for (const item of listed.contents) {
+        const meta = findByKey(pool, item.key, { includeTrash: true })
+        if (meta) {
+          targets.set(meta.hash, {
+            hash: meta.hash,
+            size: meta.size,
+            projectId: meta.projectId,
+            deletedAt: meta.deletedAt,
+          })
+        }
+      }
+    }
+    for (const key of keys) {
+      const meta =
+        findByKey(active, key) || findByKey(trashOnly, key, { includeTrash: true })
+      if (meta) {
+        targets.set(meta.hash, {
+          hash: meta.hash,
+          size: meta.size,
+          projectId: meta.projectId,
+          deletedAt: meta.deletedAt,
+        })
+      }
+    }
+
+    let deleted = 0
+    let trashed = 0
+    for (const item of targets.values()) {
+      if (permanent || item.deletedAt) {
+        await deleteObjectLocal(owner, item.hash)
+        if (item.projectId && !item.deletedAt) {
+          await debitProjectUpload(item.projectId, item.size).catch(() => undefined)
+        }
+        await deleteObjectOnChain({ owner, hashHex: item.hash }).catch(() => undefined)
+        deleted += 1
+      } else {
+        await trashObject(owner, item.hash)
+        if (item.projectId) {
+          await debitProjectUpload(item.projectId, item.size).catch(() => undefined)
+        }
+        trashed += 1
+      }
+    }
+
+    res.json({
+      ok: true,
+      deleted,
+      trashed,
+      permanent,
+      trashTtlMs: TRASH_TTL_MS,
+      profile: await getMergedProfile(owner),
+      folders: await listFolders(owner),
+    })
+  } catch (err) {
+    sendErr(res, err, 'Batch delete failed')
+  }
+})
+
+s3Router.post('/purge-trash', async (req: AuthedRequest, res) => {
+  try {
+    const purged = await purgeExpiredTrash(req.wallet!)
+    await Promise.all(
+      purged.map((hash) =>
+        deleteObjectOnChain({ owner: req.wallet!, hashHex: hash }).catch(() => undefined),
+      ),
+    )
+    res.json({ ok: true, purged: purged.length, hashes: purged })
+  } catch (err) {
+    sendErr(res, err, 'Purge failed')
   }
 })
 

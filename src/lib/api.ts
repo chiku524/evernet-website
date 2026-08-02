@@ -32,6 +32,8 @@ export type ApiObject = {
   shards: number
   /** Soroban register_object transaction hash */
   registrationTx?: string
+  deletedAt?: number
+  trashed?: boolean
 }
 
 export type VaultListing = {
@@ -126,8 +128,14 @@ export async function getProfile(): Promise<ApiProfile> {
   return api<ApiProfile>('/profile')
 }
 
-export async function listVault(): Promise<VaultListing> {
-  const res = await api<{ objects: ApiObject[]; folders?: string[] }>('/objects')
+export async function listVault(opts: { trash?: boolean | 'only' } = {}): Promise<VaultListing> {
+  const qs = new URLSearchParams()
+  if (opts.trash === true) qs.set('trash', 'true')
+  else if (opts.trash === 'only') qs.set('trash', 'only')
+  const q = qs.toString()
+  const res = await api<{ objects: ApiObject[]; folders?: string[] }>(
+    `/objects${q ? `?${q}` : ''}`,
+  )
   return {
     objects: (res.objects || []).map((o) => ({ ...o, folder: o.folder || '' })),
     folders: res.folders || [],
@@ -135,8 +143,8 @@ export async function listVault(): Promise<VaultListing> {
 }
 
 /** @deprecated prefer listVault */
-export async function listObjects(): Promise<ApiObject[]> {
-  return (await listVault()).objects
+export async function listObjects(opts: { trash?: boolean | 'only' } = {}): Promise<ApiObject[]> {
+  return (await listVault(opts)).objects
 }
 
 export async function createFolder(path: string): Promise<string[]> {
@@ -205,9 +213,20 @@ export async function downloadObject(hash: string): Promise<Blob> {
   return res.blob()
 }
 
-export async function deleteObject(hash: string): Promise<ApiProfile> {
-  const res = await api<{ profile: ApiProfile }>(`/objects/${hash}`, { method: 'DELETE' })
-  return res.profile
+export async function deleteObject(
+  hash: string,
+  opts: { permanent?: boolean } = {},
+): Promise<{ profile: ApiProfile; trashed?: boolean; permanent?: boolean; trashTtlMs?: number }> {
+  const qs = opts.permanent ? '?permanent=true' : ''
+  return api(`/objects/${hash}${qs}`, { method: 'DELETE' })
+}
+
+export async function restoreObject(hash: string): Promise<{
+  object: ApiObject
+  folders: string[]
+  profile: ApiProfile
+}> {
+  return api(`/objects/${hash}/restore`, { method: 'POST' })
 }
 
 export async function confirmPurchase(planId: string, txHash: string) {

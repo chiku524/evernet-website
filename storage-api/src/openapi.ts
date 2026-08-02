@@ -84,6 +84,13 @@ export const openApiSpec = {
         responses: { '200': { description: 'Service status' } },
       },
     },
+    '/status': {
+      get: {
+        tags: ['Public'],
+        summary: 'Readiness, capabilities, and Mainnet notes',
+        responses: { '200': { description: 'Public status JSON' } },
+      },
+    },
     '/openapi.json': {
       get: {
         tags: ['Public'],

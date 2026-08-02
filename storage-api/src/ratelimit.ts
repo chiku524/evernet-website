@@ -51,7 +51,12 @@ export function rateLimit(req: Request, res: Response, next: NextFunction) {
   const limit =
     path.startsWith('/auth/')
       ? AUTH_BURST
-      : path === '/health' || path === '/openapi.json' || path === '/' || path === '/config/public'
+      : path === '/health' ||
+          path === '/status' ||
+          path === '/openapi.json' ||
+          path === '/' ||
+          path === '/config/public' ||
+          path === '/s3/v1'
         ? 300
         : DEFAULT_LIMIT
   // Authed routes get a second, wallet-scoped check inside requireWallet.

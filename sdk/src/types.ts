@@ -20,6 +20,9 @@ export type EvernetObject = {
   createdAt: number
   shards: number
   registrationTx?: string
+  /** Soft-deleted; present while in trash (30d TTL). */
+  deletedAt?: number
+  trashed?: boolean
 }
 
 export type VaultListing = {
