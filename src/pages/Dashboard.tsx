@@ -27,6 +27,7 @@ import {
   listProjects,
   listVault,
   loginWithWallet,
+  resetLoginInFlight,
   renameFolder,
   restoreObject,
   restoreObjectVersion,
@@ -67,6 +68,7 @@ import {
   isMobileClient,
   isWalletConnectSelected,
   isWalletInAppBrowser,
+  isXBullSelected,
   openWalletProfile,
   restoreWallet,
   walletConnectConfigured,
@@ -158,6 +160,8 @@ export default function Dashboard() {
     targetFolder: string
   } | null>(null)
   const pendingDownload = useRef<ApiObject | null>(null)
+  /** Bumps to ignore stale connectAndAuth results after cancel / timeout UI reset. */
+  const connectGeneration = useRef(0)
 
   function clearDragState() {
     dragDepth.current = 0
@@ -238,11 +242,35 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!toast) return
-    // Keep WalletConnect guidance visible longer — users are switching apps.
-    const ms = toast.includes('LOBSTR') || toast.includes('WalletConnect') ? 9000 : 3200
+    // Keep wallet handoff guidance visible longer — users are switching apps/windows.
+    const ms =
+      toast.includes('LOBSTR') ||
+      toast.includes('WalletConnect') ||
+      toast.includes('xBull') ||
+      toast.includes('signature')
+        ? 9000
+        : 3200
     const t = window.setTimeout(() => setToast(null), ms)
     return () => window.clearTimeout(t)
   }, [toast])
+
+  useEffect(() => {
+    if (!busy) return
+    const onReturn = () => {
+      if (document.visibilityState !== 'visible') return
+      if (isXBullSelected()) {
+        setToast('Waiting for xBull — keep its window open until this page updates')
+      } else if (isWalletConnectSelected()) {
+        setToast('Waiting for wallet signature — return here after approving')
+      }
+    }
+    document.addEventListener('visibilitychange', onReturn)
+    window.addEventListener('pageshow', onReturn)
+    return () => {
+      document.removeEventListener('visibilitychange', onReturn)
+      window.removeEventListener('pageshow', onReturn)
+    }
+  }, [busy])
 
   const crumbs = useMemo(() => breadcrumbs(currentFolder), [currentFolder])
   const topFolders = useMemo(() => childFolders(folders, ''), [folders])
@@ -351,29 +379,41 @@ export default function Dashboard() {
 
   async function connectAndAuth() {
     if (busy) return
+    const gen = ++connectGeneration.current
     setBusy(true)
     try {
       const addr = await connectWallet(network)
+      if (gen !== connectGeneration.current) return
       setWallet(addr)
       saveAddress(addr)
       if (hasSession(addr)) {
         await refresh()
-        setToast('Wallet profile linked on Evernet')
+        if (gen === connectGeneration.current) setToast('Wallet profile linked on Evernet')
         return
       }
       if (isWalletConnectSelected()) {
         setToast(
           'One more step: approve the Evernet sign-in in LOBSTR (≡ → WalletConnect), then return here',
         )
+      } else if (isXBullSelected()) {
+        setToast('Approve the sign-in in the xBull window and keep it open until Evernet updates')
       }
       await loginWithWallet(addr, network)
       await refresh()
-      setToast('Wallet profile linked on Evernet')
+      if (gen === connectGeneration.current) setToast('Wallet profile linked on Evernet')
     } catch (err) {
+      if (gen !== connectGeneration.current) return
       setToast(err instanceof Error ? err.message : 'Connect failed')
     } finally {
-      setBusy(false)
+      if (gen === connectGeneration.current) setBusy(false)
     }
+  }
+
+  function cancelConnect() {
+    connectGeneration.current += 1
+    resetLoginInFlight()
+    setBusy(false)
+    setToast('Connect cancelled — you can try again')
   }
 
   async function disconnect() {
@@ -897,9 +937,20 @@ export default function Dashboard() {
               </label>
             )}
             {!authed ? (
-              <button type="button" className="dash-btn primary" disabled={busy} onClick={() => void connectAndAuth()}>
-                {busy ? 'Connecting…' : 'Connect wallet'}
-              </button>
+              busy ? (
+                <>
+                  <button type="button" className="dash-btn primary" disabled>
+                    Connecting…
+                  </button>
+                  <button type="button" className="dash-btn ghost" onClick={cancelConnect}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="dash-btn primary" onClick={() => void connectAndAuth()}>
+                  Connect wallet
+                </button>
+              )
             ) : (
               <>
                 <button
@@ -1020,17 +1071,30 @@ export default function Dashboard() {
                     ? 'On a phone browser, extension wallets like Freighter desktop are not available. Connect with LOBSTR, Albedo, or xBull — or open evernet.tech inside your wallet’s in-app browser.'
                     : 'Connect Freighter, LOBSTR, xBull, Albedo, Hana, Rabet or any other supported Stellar wallet set to Testnet. Files are encrypted in-browser, stored on the Evernet API, and content hashes register on-chain when available.'}
                 </p>
-                <button type="button" className="dash-btn primary" disabled={busy} onClick={() => void connectAndAuth()}>
-                  {busy ? 'Connecting…' : 'Connect wallet'}
-                </button>
+                {busy ? (
+                  <div className="hero-actions" style={{ justifyContent: 'center' }}>
+                    <button type="button" className="dash-btn primary" disabled>
+                      Connecting…
+                    </button>
+                    <button type="button" className="dash-btn ghost" onClick={cancelConnect}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" className="dash-btn primary" onClick={() => void connectAndAuth()}>
+                    Connect wallet
+                  </button>
+                )}
                 <p className="dash-empty-hint">
-                  {inAppWallet
-                    ? 'Wallet in-app browser detected — pick your installed wallet in the connect dialog.'
-                    : mobileClient
-                      ? wcEnabled
-                        ? 'Prefer LOBSTR / Albedo / xBull, or scan with WalletConnect from the dialog.'
-                        : 'Best path: open this site in LOBSTR, Freighter, or xBull. WalletConnect QR is not configured on this deploy yet.'
-                      : 'On a phone? Open evernet.tech inside your wallet’s in-app browser, or pick LOBSTR / xBull / Albedo in the connect dialog.'}
+                  {busy
+                    ? 'Approve in the wallet window and keep it open until this page updates. If it stays stuck, Cancel and try again — or open evernet.tech inside xBull / LOBSTR.'
+                    : inAppWallet
+                      ? 'Wallet in-app browser detected — pick your installed wallet in the connect dialog.'
+                      : mobileClient
+                        ? wcEnabled
+                          ? 'Prefer LOBSTR / Albedo / xBull, or scan with WalletConnect from the dialog.'
+                          : 'Best path: open this site in LOBSTR, Freighter, or xBull. WalletConnect QR is not configured on this deploy yet.'
+                        : 'On a phone? Open evernet.tech inside your wallet’s in-app browser, or pick LOBSTR / xBull / Albedo in the connect dialog.'}
                 </p>
                 {apiOnline === false && (
                   <p className="dash-empty-error">

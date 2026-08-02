@@ -100,6 +100,13 @@ export async function fetchPublicConfig() {
 
 /** Prevents overlapping SEP-10 logins (WalletConnect must not enqueue a second sign). */
 let loginInFlight: Promise<string> | null = null
+let loginGeneration = 0
+
+/** Drop a stuck in-flight login so Cancel → Connect can start a fresh SEP-10. */
+export function resetLoginInFlight() {
+  loginGeneration += 1
+  loginInFlight = null
+}
 
 /**
  * SEP-10 style login: the API hands back an unsubmittable sequence-0
@@ -113,6 +120,7 @@ export async function loginWithWallet(
   if (hasSession(address)) return address
   if (loginInFlight) return loginInFlight
 
+  const gen = loginGeneration
   loginInFlight = (async () => {
     // Freighter / xBull expose Horizon Testnet — that is Evernet’s network.
     // Soroban RPC is the same Testnet, not a second chain to switch to.
@@ -145,6 +153,9 @@ export async function loginWithWallet(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address, signedTransaction }),
       })
+      if (gen !== loginGeneration) {
+        throw new Error('Sign-in was cancelled')
+      }
       localStorage.setItem(TOKEN_KEY, result.token)
       localStorage.setItem(ADDR_KEY, result.address)
       return result.address
@@ -158,7 +169,7 @@ export async function loginWithWallet(
       throw err
     }
   })().finally(() => {
-    loginInFlight = null
+    if (gen === loginGeneration) loginInFlight = null
   })
 
   return loginInFlight

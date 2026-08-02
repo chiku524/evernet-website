@@ -34,7 +34,11 @@ const EVERNET_THEME: SwkAppTheme = {
 }
 
 const WC_ID = 'wallet_connect'
-const WC_SIGN_TIMEOUT_MS = 120_000
+const XBULL_ID = 'xbull'
+/** Popup / WalletConnect wallets can lose the reply when the tab is backgrounded. */
+const WALLET_SIGN_TIMEOUT_MS = 90_000
+const WALLET_CONNECT_TIMEOUT_MS = 120_000
+const WC_SIGN_TIMEOUT_MS = WALLET_SIGN_TIMEOUT_MS
 
 function kitNetwork(network: StellarNetworkId): KitNetworks {
   return network === 'public' ? KitNetworks.PUBLIC : KitNetworks.TESTNET
@@ -104,6 +108,38 @@ export function isWalletConnectSelected(): boolean {
   } catch {
     return false
   }
+}
+
+export function isXBullSelected(): boolean {
+  try {
+    return localStorage.getItem(LocalStorageKeys.selectedModuleId) === XBULL_ID
+  } catch {
+    return false
+  }
+}
+
+function selectedWalletId(): string | null {
+  try {
+    return localStorage.getItem(LocalStorageKeys.selectedModuleId)
+  } catch {
+    return null
+  }
+}
+
+function walletActionTimeoutMessage(action: 'connect' | 'sign'): string {
+  if (isXBullSelected()) {
+    return action === 'sign'
+      ? 'xBull did not return the signature. Approve in the xBull window and keep it open until this page updates — or open evernet.tech inside the xBull browser, then try again.'
+      : 'xBull did not finish connecting. Keep the xBull window open until Evernet updates, then try again.'
+  }
+  if (isWalletConnectSelected()) {
+    return action === 'sign'
+      ? 'LOBSTR did not return the signature. In LOBSTR open ≡ → WalletConnect, stay on that screen, then try Connect again.'
+      : 'WalletConnect did not finish connecting. Return to this tab after approving, then try again.'
+  }
+  return action === 'sign'
+    ? 'Wallet did not return a signature in time. Approve the request and return to this tab, then try again.'
+    : 'Wallet did not finish connecting in time. Try again.'
 }
 
 function wcChainLabel(chain: string): string {
@@ -182,7 +218,7 @@ async function walletConnectModule(network: StellarNetworkId): Promise<ModuleInt
       const result = await withTimeout(
         originalSign(xdr, opts),
         WC_SIGN_TIMEOUT_MS,
-        'LOBSTR did not return the signature. In LOBSTR open ≡ → WalletConnect, stay on that screen, then try Connect again.',
+        walletActionTimeoutMessage('sign'),
       )
 
       const anyResult = result as { signedTxXdr?: string; signedXDR?: string; xdr?: string }
@@ -276,8 +312,25 @@ export async function listSupportedWallets(): Promise<SupportedWallet[]> {
 }
 
 function kitError(err: unknown, fallback: string): Error {
-  if (err instanceof Error) return err
+  if (err instanceof Error) {
+    // xBull cancels RxJS waiters with EmptyError when the popup closes before replying.
+    if (/no elements in sequence|EmptyError/i.test(err.message)) {
+      return new Error(
+        isXBullSelected()
+          ? 'xBull window closed before returning a signature. Approve and leave the window open until Evernet updates.'
+          : 'Wallet window closed before finishing. Try connecting again.',
+      )
+    }
+    return err
+  }
   const message = (err as { message?: string })?.message
+  if (message && /no elements in sequence|EmptyError/i.test(message)) {
+    return new Error(
+      isXBullSelected()
+        ? 'xBull window closed before returning a signature. Approve and leave the window open until Evernet updates.'
+        : 'Wallet window closed before finishing. Try connecting again.',
+    )
+  }
   return new Error(message || fallback)
 }
 
@@ -288,7 +341,11 @@ export async function connectWallet(network: StellarNetworkId): Promise<string> 
     if (walletConnectInstance) {
       await waitForWalletConnectReady(walletConnectInstance)
     }
-    const { address } = await StellarWalletsKit.authModal()
+    const { address } = await withTimeout(
+      StellarWalletsKit.authModal(),
+      WALLET_CONNECT_TIMEOUT_MS,
+      walletActionTimeoutMessage('connect'),
+    )
     if (isWalletConnectSelected() && walletConnectInstance) {
       await hydrateWalletConnectSessions(walletConnectInstance).catch(() => undefined)
       await assertWalletConnectChain(network, address)
@@ -296,6 +353,11 @@ export async function connectWallet(network: StellarNetworkId): Promise<string> 
     return address
   } catch (err) {
     const base = kitError(err, 'Wallet connection cancelled')
+    if (isXBullSelected() && isMobileClient() && !isWalletInAppBrowser()) {
+      throw new Error(
+        `${base.message} On mobile, open evernet.tech inside the xBull app browser for the most reliable connect.`,
+      )
+    }
     if (isMobileClient() && !isWalletInAppBrowser() && !walletConnectConfigured()) {
       throw new Error(
         `${base.message} On mobile, open evernet.tech inside LOBSTR / Freighter / xBull, or pick Albedo / LOBSTR in the dialog. WalletConnect QR is not enabled on this deploy yet.`,
@@ -351,20 +413,19 @@ export async function signTransactionXdr(
       await hydrateWalletConnectSessions(walletConnectInstance)
       await assertWalletConnectChain(network, address)
     }
-    const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr, {
-      address,
-      networkPassphrase: passphrase,
-    })
+    // WalletConnect module already applies its own timeout; still wrap for xBull/Albedo popups.
+    const { signedTxXdr } = await withTimeout(
+      StellarWalletsKit.signTransaction(xdr, {
+        address,
+        networkPassphrase: passphrase,
+      }),
+      WALLET_SIGN_TIMEOUT_MS,
+      walletActionTimeoutMessage('sign'),
+    )
     if (!signedTxXdr) throw new Error('Wallet returned an empty signature')
     return signedTxXdr
   } catch (err) {
-    const base = kitError(err, 'Wallet declined the signature')
-    if (isWalletConnectSelected()) {
-      throw new Error(
-        `${base.message} For LOBSTR: keep ≡ → WalletConnect open while signing, then return to this tab.`,
-      )
-    }
-    throw base
+    throw kitError(err, 'Wallet declined the signature')
   }
 }
 
@@ -374,9 +435,12 @@ export async function signTransactionXdr(
  * without a selector are skipped rather than blocking the user.
  */
 export async function assertWalletNetwork(network: StellarNetworkId): Promise<void> {
+  // xBull’s kit module rejects getNetwork; skip the round-trip entirely.
+  if (selectedWalletId() === XBULL_ID) return
+
   const expected = getNetworkConfig(network)
   try {
-    const details = await StellarWalletsKit.getNetwork()
+    const details = await withTimeout(StellarWalletsKit.getNetwork(), 4_000, 'network-check-timeout')
     if (details.networkPassphrase && details.networkPassphrase !== expected.passphrase) {
       throw new Error(
         `Your wallet is on ${details.network || 'another network'}. Switch it to Stellar ${expected.label} and try again.`,
