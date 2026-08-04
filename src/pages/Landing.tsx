@@ -7,20 +7,20 @@ import { HowItWorks } from '../components/HowItWorks'
 
 const problems = [
   {
-    title: 'Centralized risk',
-    body: 'Cloud giants dominate storage but introduce censorship, breaches, vendor lock-in, and rising costs.',
+    title: 'Integrity without proof',
+    body: 'Critical documents live in opaque SaaS buckets with no portable way to prove they were never modified.',
   },
   {
-    title: 'Wallet-native gap',
-    body: 'Most storage still asks for accounts and cards — not a Stellar address and a signature.',
+    title: 'Compliance vs. custody',
+    body: 'Enterprises need auditability and confidentiality — not another password silo or a storage-token maze.',
   },
   {
-    title: 'Missing Stellar layer',
-    body: 'Stellar excels at payments and asset issuance — but lacks a native object-storage rail for dApps and vaults.',
+    title: 'Stellar apps without records',
+    body: 'RWA, Anchors, and identity settle on Stellar but still outsource the documents those assets refer to.',
   },
   {
-    title: 'Emerging market demand',
-    body: 'Financial inclusion initiatives generate growing volumes of documents, credentials, and digital records.',
+    title: 'Enterprise demand',
+    body: 'Healthcare, finance, and government generate growing volumes of records that must stay trustworthy.',
   },
 ]
 
@@ -48,67 +48,67 @@ const features = [
 ]
 
 const liveNow = [
+  'Paid enterprise pilot with a German healthcare institution — commercial validation for regulated records.',
   'Wallet vault at evernet.tech — folders, drag-and-drop, quota meter, passphrase or convenience encryption.',
   'Public storage API with OpenAPI, soft-delete trash, batch delete, versioning, and lifecycle.',
-  'Soroban storage-market on Stellar Testnet for leases, quota, and content-hash registration.',
-  'XLM plan purchases verified on Horizon; Labs encrypted-notes demo at /labs/notes.',
+  'Soroban integrity plane on Stellar Testnet — leases, quota, and content-hash registration.',
   'Published evernet-sdk (npm) for TypeScript apps and partner integrations.',
 ]
 
 const nextUp = [
-  'Mainnet storage-market contract and production control plane.',
-  'Distributed data plane with stronger durability guarantees beyond the current blob backend.',
-  'Compliance-friendly audit logs and GDPR/MiCA-oriented options for regulated use cases.',
-  'Deeper ecosystem demos — identity vaults, media, and document workflows on Stellar.',
+  'Stellar integrity PoC — Anchor/RWA store documents, anchor content hashes, verify unmodified.',
+  'Mainnet integrity control plane and production hardening for enterprise workloads.',
+  'Compliance-friendly audit logs and GDPR/MiCA-oriented options for regulated builders.',
+  'Integrity workflows for RWA issuers, Anchors, digital identity, and compliant enterprise apps.',
 ]
 
 const strategy = [
   {
-    title: 'Stellar-first payments',
-    body: 'Native XLM for capacity today; Soroban leasing and escrow as the on-chain control plane expands to Mainnet.',
+    title: 'Enterprise integrity wedge',
+    body: 'Lead with paying regulated use cases — including a paid German healthcare pilot — where trust and auditability close deals.',
+  },
+  {
+    title: 'Stellar use-case expansion',
+    body: 'Enable RWA, Anchors, stablecoin issuers, and identity apps with verifiable document workflows on Stellar.',
   },
   {
     title: 'Ecosystem partnerships',
-    body: 'Ship with storage, finance, and product teams — SigeaCloud, Obsideo, and builders across Stellar.',
+    body: 'Ship with finance and infrastructure teams — SigeaCloud, Obsideo, Peridot, and builders across Stellar.',
   },
   {
     title: 'Developer surface',
-    body: 'Docs, OpenAPI, evernet-sdk, API keys, and grants so apps can store encrypted objects without standing up their own stack.',
-  },
-  {
-    title: 'Community utility',
-    body: 'Real vault usage, storage bounties, and partner apps that make wallet-linked storage the default habit.',
+    body: 'Docs, OpenAPI, evernet-sdk, API keys, and grants so apps can ship integrity workflows without standing up their own stack.',
   },
 ]
 
 const alignment = [
   {
-    title: 'Financial inclusion',
-    body: 'Low-cost storage helps underbanked users securely manage digital assets and records.',
+    title: 'New enterprise use cases',
+    body: 'RWA, Anchors, stablecoins, and identity get confidential records with cryptographic proofs on Stellar — not another Filecoin clone.',
   },
   {
-    title: 'Interoperability & utility',
-    body: 'Adds persistent object storage beyond Stellar’s payment rails — same wallets, same signatures.',
+    title: 'Trust & auditability',
+    body: 'Content hashes on Soroban turn Stellar into the integrity receipt layer for documents that must not change.',
   },
   {
     title: 'Developer empowerment',
-    body: 'HTTP API + SDK that accelerate dApps on Stellar and Soroban without reinventing auth or encryption.',
+    body: 'HTTP API + SDK that accelerate regulated apps on Stellar without reinventing auth, encryption, or verification.',
   },
   {
     title: 'Open ecosystem',
-    body: 'Censorship-resistant, user-owned infrastructure aligned with Stellar’s open network philosophy.',
+    body: 'User-owned, wallet-native infrastructure aligned with Stellar’s open network philosophy.',
   },
   {
-    title: 'Sustainability',
-    body: 'Control plane on Stellar; object bytes stay off-chain — efficient design versus proof-of-work-heavy alternatives.',
+    title: 'Efficient design',
+    body: 'Integrity control plane on Stellar; encrypted object bytes stay off-chain — practical for enterprise scale.',
   },
 ]
 
 const milestones = [
-  { q: 'Now', body: 'Live vault, S3-shaped API, XLM plans, Testnet Soroban control plane, and evernet-sdk.' },
-  { q: 'Next', body: 'Mainnet contract deploy, production hardening, and partner app rollouts.' },
-  { q: 'Then', body: 'Distributed data plane, stronger durability proofs, and compliance tooling.' },
-  { q: 'Beyond', body: 'Evernet as the default data layer for Stellar finance, identity, and archival apps.' },
+  { q: 'Now', body: 'Live vault + API + SDK; Testnet integrity plane; paid healthcare pilot and partner network.' },
+  { q: 'Next', body: 'Stellar Anchor/RWA verify PoC, Mainnet control plane, audits, and compliance tooling.' },
+  { q: 'Then', body: 'Integrity workflows for RWA, Anchors, identity, and regulated enterprise apps.' },
+  { q: 'Beyond', body: 'Default integrity layer for Stellar finance, institutions, and compliant archival.' },
 ]
 
 const plans = [
@@ -195,7 +195,7 @@ export default function Landing() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
           >
-            Decentralized storage built for Stellar.
+            Data integrity infrastructure for Stellar.
           </motion.h1>
           <motion.p
             className="hero-lead"
@@ -203,7 +203,8 @@ export default function Landing() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.75, delay: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
-            Wallet-linked, client-encrypted object storage — open the vault or call the API, and pay for capacity in XLM.
+            Trust, auditability, and client-encrypted records for enterprises — wallet identity, on-chain integrity
+            proofs, capacity in XLM.
           </motion.p>
           <motion.div
             className="hero-actions"
@@ -225,10 +226,10 @@ export default function Landing() {
         <div className="container">
           <Reveal className="section-head">
             <p className="eyebrow">The gap</p>
-            <h2>Storage that matches Stellar’s ambition.</h2>
+            <h2>Integrity that matches Stellar’s ambition.</h2>
             <p>
-              Centralized clouds create risk. Most decentralized alternatives ignore Stellar wallets and XLM.
-              Evernet closes both gaps with a vault and API you can use today.
+              Payments settle on-chain. The documents behind RWA, Anchors, and enterprise workflows still live in
+              opaque clouds. Evernet closes that trust gap — live vault and API today.
             </p>
           </Reveal>
           <div className="problem-grid">
@@ -246,10 +247,10 @@ export default function Landing() {
         <div className="container">
           <Reveal className="section-head">
             <p className="eyebrow">Product</p>
-            <h2>S3-shaped. Encrypted. Wallet-native.</h2>
+            <h2>Encrypted records. On-chain integrity proofs.</h2>
             <p>
-              A live vault, public HTTP API, and npm SDK — Stellar addresses for identity, XLM for capacity,
-              bytes encrypted before they leave the client.
+              A live vault, public HTTP API, and npm SDK — Stellar addresses for identity, content hashes for
+              auditability, bytes encrypted before they leave the client.
             </p>
           </Reveal>
           <Reveal>
@@ -262,8 +263,8 @@ export default function Landing() {
               ))}
             </div>
             <p className="diff-line">
-              Stellar is the control plane (auth, quota, content hashes). Object bytes stay off-chain —
-              fast to serve, simple to integrate, ready for a distributed data plane next.
+              Stellar is the integrity control plane (auth, quota, content hashes). Encrypted object bytes stay
+              off-chain — storage is the delivery mechanism; trust is the product.
             </p>
           </Reveal>
         </div>
@@ -286,9 +287,9 @@ export default function Landing() {
         <div className="container">
           <Reveal className="section-head">
             <p className="eyebrow">Live today</p>
-            <h2>Ship against a working stack.</h2>
+            <h2>Commercial traction and a working stack.</h2>
             <p>
-              Testnet control plane and production vault/API surface — not a whitepaper demo.
+              Paying enterprise validation plus a Testnet integrity plane and production vault/API — not a whitepaper demo.
             </p>
           </Reveal>
           <div className="tech-list">
@@ -317,11 +318,11 @@ export default function Landing() {
       <section className="section partners" id="partners">
         <div className="container">
           <Reveal className="section-head">
-            <p className="eyebrow">Partners</p>
+            <p className="eyebrow">Partners &amp; traction</p>
             <h2>Building with teams across the ecosystem.</h2>
             <p>
-              Evernet collaborates with storage, finance, and digital product partners who share the goal of
-              wallet-native, user-owned infrastructure.
+              Commercial validation includes a paid pilot with a German healthcare institution, plus finance and
+              infrastructure partners who need wallet-native, integrity-preserving records.
             </p>
           </Reveal>
           <div className="partners-grid" role="list">
@@ -352,17 +353,17 @@ export default function Landing() {
         <div className="container">
           <Reveal className="section-head">
             <p className="eyebrow">Go-to-market</p>
-            <h2>Become the preferred data layer for Stellar.</h2>
+            <h2>Become the integrity layer for Stellar.</h2>
             <p>
-              Powering finance, identity, supply chain, and Web3 applications with sovereign storage.
+              Powering RWA, Anchors, identity, and regulated enterprise apps with verifiable, confidential records.
             </p>
           </Reveal>
           <Reveal>
             <div className="markets-strip" aria-label="Target markets">
-              <span>Stellar developers</span>
-              <span>Emerging markets</span>
-              <span>Enterprises</span>
-              <span>NFT &amp; archival</span>
+              <span>RWA &amp; Anchors</span>
+              <span>Enterprises &amp; healthcare</span>
+              <span>Digital identity</span>
+              <span>Stellar builders</span>
             </div>
           </Reveal>
           <div className="strategy-steps" style={{ marginTop: '2rem' }}>
@@ -382,10 +383,10 @@ export default function Landing() {
         <div className="container">
           <Reveal className="section-head">
             <p className="eyebrow">Stellar alignment</p>
-            <h2>Built to advance financial inclusion.</h2>
+            <h2>New capabilities — not another storage marketplace.</h2>
             <p>
-              Wallet auth, XLM capacity, and Soroban leases turn storage into something Stellar users already
-              know how to pay for and control.
+              Wallet auth, XLM capacity, and Soroban content hashes let Stellar projects prove documents
+              unchanged — complementary value beyond accepting XLM as payment.
             </p>
           </Reveal>
           <Reveal>
@@ -406,9 +407,10 @@ export default function Landing() {
         <div className="container">
           <Reveal className="section-head">
             <p className="eyebrow">What&apos;s next</p>
-            <h2>From Testnet product to Mainnet data layer.</h2>
+            <h2>From live product to Stellar integrity workflows.</h2>
             <p>
-              The vault and API are live. The roadmap hardens the control plane and expands the data plane.
+              The vault and API are live. The roadmap ships the enterprise PoC and expands regulated use cases
+              on Stellar.
             </p>
           </Reveal>
           <div className="tech-list">
@@ -428,9 +430,10 @@ export default function Landing() {
         <div className="container">
           <Reveal className="section-head">
             <p className="eyebrow">Roadmap</p>
-            <h2>Shipped first. Scale next.</h2>
+            <h2>Shipped first. Ecosystem capabilities next.</h2>
             <p>
-              Competitive edge: live product traction, a working Stellar integration, and a clear path to Mainnet.
+              Competitive edge: paid enterprise pilot, live product, working Stellar integrity plane, and a clear
+              Mainnet path.
             </p>
           </Reveal>
           <div className="timeline">
@@ -491,10 +494,10 @@ export default function Landing() {
             <p className="eyebrow" style={{ color: 'var(--foam)' }}>
               Next step
             </p>
-            <h2>Expand Stellar with a missing piece: data.</h2>
+            <h2>Make data integrity native to Stellar.</h2>
             <p>
-              Connect a wallet, encrypt a file, or integrate the SDK — Evernet is ready for the Stellar
-              community today.
+              Connect a wallet, encrypt a record, or integrate the SDK — Evernet is ready for enterprises and
+              Stellar builders today.
             </p>
             <div className="hero-actions">
               <Link className="btn btn-primary" to="/dashboard">

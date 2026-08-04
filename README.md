@@ -1,6 +1,6 @@
 # Evernet
 
-Decentralized, wallet-linked storage for Stellar — marketing site + vault dashboard + Soroban control plane + storage API.
+Enterprise data integrity & compliance infrastructure for Stellar — marketing site + vault dashboard + Soroban integrity control plane + storage API.
 
 Live: [evernet.tech](https://evernet.tech) · API: [evernet-storage-api.vercel.app](https://evernet-storage-api.vercel.app) · Docs: [evernet.tech/docs#api](https://evernet.tech/docs#api)
 

@@ -286,6 +286,37 @@
   border-bottom: 0;
 }
 
+.pitch-callout {
+  padding: 1.25rem 1.35rem;
+  margin-bottom: 1.25rem;
+  border-radius: 8px;
+  border: 1px solid rgba(42, 143, 124, 0.35);
+  background: linear-gradient(135deg, rgba(42, 143, 124, 0.12), rgba(255, 255, 255, 0.7));
+}
+
+.pitch-callout-label {
+  margin: 0 0 0.45rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--pitch-foam);
+}
+
+.pitch-callout p:last-child {
+  margin: 0;
+  color: var(--pitch-ink);
+  line-height: 1.55;
+}
+
+.pitch-callout strong {
+  font-weight: 700;
+}
+
+.pitch-checklist strong {
+  color: var(--pitch-ink);
+}
+
 .pitch-note {
   margin-top: 1rem;
   font-size: 0.95rem;

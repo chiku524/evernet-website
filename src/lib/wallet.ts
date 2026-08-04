@@ -198,7 +198,7 @@ async function walletConnectModule(network: StellarNetworkId): Promise<ModuleInt
       projectId,
       metadata: {
         name: 'Evernet',
-        description: 'Wallet-linked decentralized storage on Stellar',
+        description: 'Wallet-linked data integrity infrastructure on Stellar',
         url: window.location.origin,
         icons: [`${window.location.origin}/favicon.svg`],
       },

@@ -155,7 +155,7 @@ const steps = [
   },
   {
     title: 'Stellar records the receipt',
-    body: 'Soroban tracks your quota and content hash. Stellar is the control plane; bytes stay off-chain.',
+    body: 'Soroban tracks your quota and content hash. Stellar is the integrity control plane; encrypted bytes stay off-chain.',
     Icon: OrbitIcon,
   },
 ]
