@@ -59,10 +59,16 @@ export default function Pitch() {
 
   const plans = useMemo(
     () => [
+      { name: 'Free', capacity: '5 GB included', price: '—' },
       { name: 'Starter', capacity: '+10 GB', price: '5 XLM' },
       { name: 'Growth', capacity: '+50 GB', price: '20 XLM' },
       { name: 'Pro', capacity: '+200 GB', price: '60 XLM' },
     ],
+    [],
+  )
+
+  const partners = useMemo(
+    () => ['SigeaCloud', 'Obsideo', 'Era Digitalis', 'Peridot', 'Indikin'],
     [],
   )
 
@@ -93,8 +99,8 @@ export default function Pitch() {
           <h1 className="pitch-brand-hero">Evernet</h1>
           <p className="pitch-hero-line">The wallet-linked storage layer Stellar has been missing.</p>
           <p className="pitch-hero-sub">
-            Decentralized, encrypted object storage with on-chain identity, XLM payments, and Soroban
-            quota — live today on Testnet at evernet.tech.
+            Decentralized, client-encrypted object storage with wallet identity, XLM capacity, and a
+            Soroban control plane — production vault and API at evernet.tech, Testnet leases live today.
           </p>
           <div className="pitch-hero-cta">
             <a className="pitch-btn primary" href="https://evernet.tech/dashboard" target="_blank" rel="noreferrer">
@@ -112,11 +118,7 @@ export default function Pitch() {
           lead="Stellar moves value better than almost any chain. Builders still bolt on AWS, IPFS gateways, or UX-hostile storage networks when they need documents, media, and credentials. Evernet makes storage a first-class Stellar primitive: your address is your account, XLM buys capacity, and ciphertext stays client-encrypted."
         />
 
-        <Section
-          id="problem"
-          eyebrow="Problem"
-          title="Three gaps. One wedge."
-        >
+        <Section id="problem" eyebrow="Problem" title="Three gaps. One wedge.">
           <div className="pitch-grid three">
             <article>
               <h3>Centralized default</h3>
@@ -124,11 +126,17 @@ export default function Pitch() {
             </article>
             <article>
               <h3>Decentralized friction</h3>
-              <p>Many storage networks ask users to learn new wallets, tokens, and mental models — then under-deliver on product polish.</p>
+              <p>
+                Many storage networks ask users to learn new wallets, tokens, and mental models — then
+                under-deliver on product polish.
+              </p>
             </article>
             <article>
               <h3>Stellar’s missing rail</h3>
-              <p>Asset issuance and payments are mature. A native, wallet-native place to keep the data those assets refer to is not.</p>
+              <p>
+                Asset issuance and payments are mature. A native, wallet-native place to keep the data those
+                assets refer to is not.
+              </p>
             </article>
           </div>
         </Section>
@@ -145,51 +153,52 @@ export default function Pitch() {
                 <li>Storage profiles per G… address (quota, usage, lease)</li>
                 <li>Object content-hash registry</li>
                 <li>Payment dedupe after Horizon-verified XLM purchases</li>
-                <li>Plan catalog (Starter / Growth / Pro)</li>
+                <li>Plan catalog (Free + Starter / Growth / Pro)</li>
+                <li>storage-market contract live on Stellar Testnet</li>
               </ul>
             </div>
             <div>
-              <h3>Off-chain (Evernet API)</h3>
+              <h3>Off-chain (Evernet API + vault)</h3>
               <ul>
-                <li>AES-GCM ciphertext uploaded from the browser</li>
-                <li>Folder organization and vault UX</li>
-                <li>Durable blob persistence</li>
-                <li>SEP-10 style wallet auth (works across Stellar wallets)</li>
+                <li>AES-GCM ciphertext encrypted in the browser</li>
+                <li>Folders, search, trash (30-day restore), optional versioning</li>
+                <li>S3-shaped HTTP API + OpenAPI (put, list, multipart, presigns, shares)</li>
+                <li>API keys, project soft-cap pools, SEP-10 wallet auth</li>
+                <li>Published TypeScript client: evernet-sdk on npm</li>
               </ul>
             </div>
           </div>
         </Section>
 
-        <Section
-          id="traction"
-          eyebrow="Traction"
-          title="Not a whitepaper — a working product."
-        >
+        <Section id="traction" eyebrow="Traction" title="Not a whitepaper — a working product.">
           <div className="pitch-metrics">
             <div>
               <strong>Live</strong>
-              <span>evernet.tech vault + docs</span>
+              <span>Vault, docs, Labs demo</span>
             </div>
             <div>
               <strong>Testnet</strong>
-              <span>Soroban storage-market deployed</span>
+              <span>Soroban storage-market</span>
+            </div>
+            <div>
+              <strong>API + SDK</strong>
+              <span>OpenAPI · evernet-sdk</span>
             </div>
             <div>
               <strong>12+</strong>
               <span>Stellar wallets via Wallets Kit</span>
             </div>
-            <div>
-              <strong>XLM</strong>
-              <span>Pay → verify → on-chain credit</span>
-            </div>
           </div>
           <ul className="pitch-checklist">
-            <li>Multi-wallet connect (Freighter, LOBSTR, xBull, Albedo, and more)</li>
-            <li>Client-side encryption before upload</li>
-            <li>Folder organization with drag-and-drop</li>
-            <li>Content hashes linked to Stellar explorer transactions</li>
-            <li>Storage plans purchasable with native XLM</li>
+            <li>Production vault at evernet.tech — multi-wallet connect, passphrase or convenience encryption</li>
+            <li>Folders, drag-and-drop, search, trash/restore, quota meter, and content-hash explorer links</li>
+            <li>XLM plan purchases verified on Horizon → on-chain credit (Testnet primary; Mainnet when treasury funded)</li>
+            <li>Public S3-shaped surface: multipart, ranged GET, lifecycle, soft-delete, presigns, share grants</li>
+            <li>Builder stack: OpenAPI, API keys, project pools, npm evernet-sdk, encrypted-notes reference app</li>
           </ul>
+          <p className="pitch-note" style={{ marginTop: '1rem' }}>
+            Ecosystem partners: {partners.join(' · ')}.
+          </p>
         </Section>
 
         <Section eyebrow="Business model" title="Capacity sold in XLM. Identity is the wallet.">
@@ -214,9 +223,10 @@ export default function Pitch() {
             </table>
           </div>
           <p className="pitch-note">
-            Free tier anchors activation (5 GB). Paid leases extend quota on-chain after Horizon settlement.
-            Live developer HTTP API, OpenAPI, TypeScript SDK, API keys, project soft-cap pools, and a reference
-            encrypted-notes dApp today; future upside includes node incentives and enterprise SLA tiers.
+            Free tier anchors activation (5 GB with every wallet). Paid leases extend quota after Horizon
+            settlement — no cards, no custom token. Revenue today is capacity sold in native XLM; developer
+            surface (API keys, project pools, SDK) drives app attach. Future upside: node incentives,
+            enterprise SLA tiers, and compliance options for regulated builders.
           </p>
         </Section>
 
@@ -224,19 +234,31 @@ export default function Pitch() {
           <div className="pitch-grid two">
             <article>
               <h3>Financial inclusion</h3>
-              <p>Credentials, remittance receipts, and identity docs need cheap, user-owned storage — not another SaaS silo.</p>
+              <p>
+                Credentials, remittance receipts, and identity docs need cheap, user-owned storage — not another
+                SaaS silo.
+              </p>
             </article>
             <article>
               <h3>Soroban maturity</h3>
-              <p>Smart contracts can finally host the control plane: leases, quotas, and verifiable object registration.</p>
+              <p>
+                Smart contracts can finally host the control plane: leases, quotas, and verifiable object
+                registration — already running on Testnet.
+              </p>
             </article>
             <article>
               <h3>Wallet distribution</h3>
-              <p>LOBSTR, Freighter, xBull and others already hold users. Evernet rides that distribution instead of fighting it.</p>
+              <p>
+                LOBSTR, Freighter, xBull and others already hold users. Evernet rides that distribution instead
+                of fighting it.
+              </p>
             </article>
             <article>
               <h3>Builder demand</h3>
-              <p>dApps on Stellar still outsource blobs. A native vault + SDK is an obvious grant- and venture-aligned unlock.</p>
+              <p>
+                dApps on Stellar still outsource blobs. A live vault + S3-shaped API + SDK is the unlock grants
+                and ventures can fund against.
+              </p>
             </article>
           </div>
         </Section>
@@ -244,33 +266,53 @@ export default function Pitch() {
         <Section eyebrow="Go-to-market" title="Ship utility first. Expand the mesh second.">
           <ol className="pitch-steps">
             <li>
-              <strong>Product-led Stellar wedge</strong> — wallet vault, XLM checkout, docs, and demos builders can feel in minutes.
+              <strong>Product-led Stellar wedge (shipping)</strong> — wallet vault, XLM checkout, docs, OpenAPI,
+              evernet-sdk, and Labs demos builders can feel in minutes.
             </li>
             <li>
-              <strong>Ecosystem partnerships</strong> — Stellar-based apps, identity projects, and adjacent networks (e.g. data outposts / IBC-style bridges).
+              <strong>Ecosystem partnerships</strong> — grow usage with Stellar apps, finance and storage partners
+              (e.g. SigeaCloud, Obsideo, Peridot), and identity / document workflows.
             </li>
             <li>
-              <strong>Developer surface</strong> — SDKs, grants, and reference apps (document vaults, media, signed records).
+              <strong>Developer surface</strong> — deepen the SDK, grants, and reference apps (media, credentials,
+              signed records) so Evernet is the default storage import.
             </li>
             <li>
-              <strong>Decentralize the data plane</strong> — grow from API-backed durability to a broader node mesh with proof-of-retrievability.
+              <strong>Decentralize the data plane</strong> — grow from API-backed durability (Vercel Blob today)
+              to a broader node mesh with stronger retrievability guarantees.
             </li>
           </ol>
         </Section>
 
-        <Section eyebrow="Roadmap" title="Twelve months to mainnet-ready rails.">
+        <Section eyebrow="Roadmap" title="From live Testnet product to Mainnet data layer.">
           <div className="pitch-roadmap">
             <div>
               <span>Now</span>
-              <p>Testnet vault, Soroban market, multi-wallet UX, XLM billing.</p>
+              <p>
+                Live vault, S3-shaped API, XLM plans, Testnet Soroban control plane, multi-wallet UX, and
+                published evernet-sdk.
+              </p>
             </div>
             <div>
               <span>Next</span>
-              <p>Audits, compliance logging options, npm-published SDK distribution.</p>
+              <p>
+                Mainnet storage-market deploy, production control-plane hardening, security audits, and partner
+                app rollouts.
+              </p>
             </div>
             <div>
               <span>Then</span>
-              <p>Mainnet payments, node incentives, and production SLAs for regulated builders.</p>
+              <p>
+                Distributed data plane and durability proofs; compliance-friendly audit logs and GDPR/MiCA-oriented
+                options.
+              </p>
+            </div>
+            <div>
+              <span>Beyond</span>
+              <p>
+                Node incentives, production SLAs for regulated builders, and Evernet as the default data layer for
+                Stellar finance, identity, and archival.
+              </p>
             </div>
           </div>
         </Section>
@@ -307,7 +349,7 @@ export default function Pitch() {
           id="ask"
           eyebrow="The ask"
           title="Partner with us to make storage native to Stellar."
-          lead="We’re raising to harden the protocol, complete audits, and put Evernet in the hands of Stellar builders and end users — with a live product already demonstrating the loop."
+          lead="We’re raising to harden the protocol for Mainnet, complete audits, expand the data plane, and put Evernet in more Stellar builders’ and end users’ hands — with a live product already demonstrating the full loop."
         >
           <div className="pitch-ask">
             <a className="pitch-btn primary" href="mailto:hello@evernet.tech?subject=Evernet%20investor%20brief">
@@ -325,6 +367,14 @@ export default function Pitch() {
             · Docs:{' '}
             <a href="https://evernet.tech/docs" target="_blank" rel="noreferrer">
               /docs
+            </a>{' '}
+            · Labs:{' '}
+            <a href="https://evernet.tech/labs/notes" target="_blank" rel="noreferrer">
+              encrypted notes
+            </a>{' '}
+            · npm:{' '}
+            <a href="https://www.npmjs.com/package/evernet-sdk" target="_blank" rel="noreferrer">
+              evernet-sdk
             </a>
           </p>
         </Section>

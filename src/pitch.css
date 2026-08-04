@@ -335,7 +335,7 @@
 
 .pitch-roadmap {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1rem;
 }
 
@@ -404,7 +404,17 @@
 @media (max-width: 860px) {
   .pitch-grid.two,
   .pitch-grid.three,
-  .pitch-split,
+  .pitch-split {
+    grid-template-columns: 1fr;
+  }
+
+  .pitch-metrics,
+  .pitch-roadmap {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
   .pitch-metrics,
   .pitch-roadmap {
     grid-template-columns: 1fr;
