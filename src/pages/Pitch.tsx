@@ -1,10 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
 import BrandMark from '../components/BrandMark'
-
-const ACCESS_CODE = (import.meta.env.VITE_PITCH_ACCESS_CODE || '').trim()
-const GATE_KEY = 'evernet-pitch-ok'
 
 const fade = {
   hidden: { opacity: 0, y: 22 },
@@ -45,50 +42,8 @@ function Section({
   )
 }
 
-function Gate({ onUnlock }: { onUnlock: () => void }) {
-  const [value, setValue] = useState('')
-  const [error, setError] = useState(false)
-
-  function submit(e: FormEvent) {
-    e.preventDefault()
-    if (value.trim() === ACCESS_CODE) {
-      sessionStorage.setItem(GATE_KEY, '1')
-      onUnlock()
-      return
-    }
-    setError(true)
-  }
-
-  return (
-    <div className="pitch-gate">
-      <div className="pitch-gate-card">
-        <p className="pitch-eyebrow">Confidential</p>
-        <h1>Evernet investor brief</h1>
-        <p>This page is unlisted. Enter the access code to continue.</p>
-        <form onSubmit={submit}>
-          <input
-            type="password"
-            autoFocus
-            autoComplete="off"
-            placeholder="Access code"
-            value={value}
-            onChange={(e) => {
-              setValue(e.target.value)
-              setError(false)
-            }}
-          />
-          <button type="submit">Open brief</button>
-        </form>
-        {error && <p className="pitch-gate-error">That code isn’t valid.</p>}
-      </div>
-    </div>
-  )
-}
-
 export default function Pitch() {
   const reduce = useReducedMotion()
-  const needsGate = Boolean(ACCESS_CODE)
-  const [unlocked, setUnlocked] = useState(() => !needsGate || sessionStorage.getItem(GATE_KEY) === '1')
 
   useEffect(() => {
     document.title = 'Evernet — Confidential Investor Brief'
@@ -110,8 +65,6 @@ export default function Pitch() {
     ],
     [],
   )
-
-  if (needsGate && !unlocked) return <Gate onUnlock={() => setUnlocked(true)} />
 
   return (
     <div className="pitch-page">

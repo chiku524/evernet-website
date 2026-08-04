@@ -401,67 +401,6 @@
   font-size: 0.85rem;
 }
 
-.pitch-gate {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 1.5rem;
-  background:
-    radial-gradient(800px 400px at 50% 0%, rgba(42, 143, 124, 0.18), transparent 60%),
-    var(--pitch-chalk);
-}
-
-.pitch-gate-card {
-  width: min(100%, 26rem);
-  padding: 1.75rem;
-  border-radius: 10px;
-  border: 1px solid var(--pitch-line);
-  background: rgba(255, 255, 255, 0.8);
-  box-shadow: 0 18px 50px rgba(11, 46, 47, 0.08);
-}
-
-.pitch-gate-card h1 {
-  font-family: var(--font-display);
-  font-size: 1.8rem;
-  letter-spacing: -0.03em;
-  margin: 0 0 0.5rem;
-}
-
-.pitch-gate-card p {
-  color: var(--muted);
-  margin: 0 0 1rem;
-  line-height: 1.5;
-}
-
-.pitch-gate-card form {
-  display: grid;
-  gap: 0.65rem;
-}
-
-.pitch-gate-card input {
-  border: 1px solid var(--pitch-line);
-  border-radius: 6px;
-  padding: 0.7rem 0.8rem;
-  font: inherit;
-}
-
-.pitch-gate-card button {
-  border: 0;
-  border-radius: 6px;
-  padding: 0.75rem 1rem;
-  background: var(--pitch-ink);
-  color: #f4faf8;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.pitch-gate-error {
-  color: var(--pitch-copper) !important;
-  margin-top: 0.75rem !important;
-  font-size: 0.9rem;
-}
-
 @media (max-width: 860px) {
   .pitch-grid.two,
   .pitch-grid.three,
