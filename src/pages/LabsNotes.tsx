@@ -2,7 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { EvernetClient, walletPassphrase } from 'evernet-sdk'
 import BrandMark from '../components/BrandMark'
-import { apiBase, clearSession, hasSession, loginWithWallet, sessionAddress } from '../lib/api'
+import {
+  apiBase,
+  clearSession,
+  ensureSession,
+  setSession,
+} from '../lib/api'
 import {
   loadPreferredNetwork,
   saveAddress,
@@ -20,10 +25,16 @@ type NoteMeta = {
 const FOLDER = 'labs/encrypted-notes'
 const TITLE_PREFIX = 'note:'
 
+function vaultItemPath(hash: string) {
+  return `/dashboard?hash=${encodeURIComponent(hash)}`
+}
+
 function client() {
   return new EvernetClient({
     baseUrl: apiBase(),
     getToken: () => localStorage.getItem('evernet-api-token'),
+    onToken: (token, address) => setSession(token, address),
+    onClearToken: () => clearSession(),
   })
 }
 
@@ -34,6 +45,7 @@ export default function LabsNotes() {
   const [title, setTitle] = useState('Untitled')
   const [body, setBody] = useState('')
   const [activeHash, setActiveHash] = useState<string | null>(null)
+  const [vaultUrl, setVaultUrl] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [passMode, setPassMode] = useState<'custom' | 'convenience'>('custom')
@@ -57,12 +69,11 @@ export default function LabsNotes() {
       const addr = await restoreWallet(network)
       if (!addr) return
       setWallet(addr)
-      if (hasSession(addr)) {
-        try {
-          await refreshNotes()
-        } catch {
-          /* empty vault ok */
-        }
+      try {
+        await ensureSession(addr, network)
+        await refreshNotes()
+      } catch {
+        /* empty vault or needs interactive re-login */
       }
     })()
   }, [network, refreshNotes])
@@ -74,17 +85,13 @@ export default function LabsNotes() {
     return pass
   }
 
-  async function ensureSession(addr: string) {
-    if (!hasSession(addr)) await loginWithWallet(addr, network)
-  }
-
   async function handleConnect() {
     setBusy(true)
     setStatus(null)
     try {
       const addr = await connectWallet(network)
       saveAddress(addr)
-      await ensureSession(addr)
+      await ensureSession(addr, network)
       setWallet(addr)
       await refreshNotes()
       setStatus('Connected — notes folder ready')
@@ -102,6 +109,7 @@ export default function LabsNotes() {
     setWallet(null)
     setNotes([])
     setActiveHash(null)
+    setVaultUrl(null)
     setBody('')
     setStatus('Disconnected')
   }
@@ -110,11 +118,16 @@ export default function LabsNotes() {
     if (!wallet) return
     setBusy(true)
     setStatus(null)
+    setVaultUrl(null)
     try {
-      await ensureSession(wallet)
+      await ensureSession(wallet, network)
       const pass = resolvePass(wallet)
       const c = client()
-      await c.createFolder(FOLDER).catch(() => undefined)
+      await c.createFolder(FOLDER).catch((err) => {
+        // Folder may already exist; auth failures should surface.
+        const msg = err instanceof Error ? err.message : String(err)
+        if (/invalid or expired|missing bearer|revoked/i.test(msg)) throw err
+      })
       if (activeHash) {
         await c.deleteObject(activeHash).catch(() => undefined)
       }
@@ -128,11 +141,19 @@ export default function LabsNotes() {
         folder: FOLDER,
         passphrase: pass,
       })
+      const path = vaultItemPath(object.hash)
       setActiveHash(object.hash)
+      setVaultUrl(`${window.location.origin}${path}`)
       await refreshNotes()
-      setStatus(`Saved · hash ${object.hash.slice(0, 12)}…`)
+      setStatus(`Saved encrypted note · ${object.hash.slice(0, 12)}…`)
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Save failed')
+      const msg = err instanceof Error ? err.message : 'Save failed'
+      if (/invalid or expired token/i.test(msg)) {
+        clearSession()
+        setStatus('Session expired — connect again to sign a fresh auth challenge, then retry save.')
+      } else {
+        setStatus(msg)
+      }
     } finally {
       setBusy(false)
     }
@@ -143,12 +164,14 @@ export default function LabsNotes() {
     setBusy(true)
     setStatus(null)
     try {
+      await ensureSession(wallet, network)
       const pass = resolvePass(wallet)
       const dec = await client().downloadAndDecrypt(note.hash, pass)
       const parsed = JSON.parse(await dec.file.text()) as { title?: string; body?: string }
       setTitle(parsed.title || note.title)
       setBody(parsed.body || '')
       setActiveHash(note.hash)
+      setVaultUrl(`${window.location.origin}${vaultItemPath(note.hash)}`)
       setStatus(`Opened ${note.title}`)
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not decrypt note')
@@ -159,6 +182,7 @@ export default function LabsNotes() {
 
   async function handleNew() {
     setActiveHash(null)
+    setVaultUrl(null)
     setTitle('Untitled')
     setBody('')
     setStatus('New note')
@@ -269,15 +293,21 @@ export default function LabsNotes() {
             />
             {status && <p className="labs-status">{status}</p>}
             {activeHash && (
-              <p className="labs-hash">
-                Content hash <code>{activeHash}</code>
-                {sessionAddress() && (
-                  <>
-                    {' '}
-                    · <Link to="/dashboard">Open in vault</Link>
-                  </>
+              <div className="labs-vault-link">
+                <p className="labs-hash">
+                  Content hash <code>{activeHash}</code>
+                </p>
+                <p>
+                  Vault item:{' '}
+                  <Link to={vaultItemPath(activeHash)}>Open in vault</Link>
+                  <span className="labs-folder"> · folder <code>{FOLDER}</code></span>
+                </p>
+                {vaultUrl && (
+                  <p className="labs-url">
+                    <a href={vaultUrl}>{vaultUrl}</a>
+                  </p>
                 )}
-              </p>
+              </div>
             )}
           </section>
         </div>

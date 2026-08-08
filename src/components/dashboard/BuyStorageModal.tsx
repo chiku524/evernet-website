@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { confirmPurchase, hasSession, loginWithWallet, sessionAddress } from '../../lib/api'
+import { confirmPurchase, ensureSession, sessionAddress } from '../../lib/api'
 import { formatBytes } from '../../lib/format'
 import {
   DEFAULT_RECEIVER,
@@ -45,8 +45,7 @@ export function BuyStorageModal({ open, onClose, onPurchased, showToast, wallet 
   if (!open) return null
 
   async function ensureAuthed(addr: string, net: StellarNetworkId) {
-    if (hasSession(addr)) return
-    await loginWithWallet(addr, net)
+    await ensureSession(addr, net)
   }
 
   async function handleConnect() {

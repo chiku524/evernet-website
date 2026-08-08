@@ -202,6 +202,38 @@
   word-break: break-all;
 }
 
+.labs-vault-link {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(15, 40, 50, 0.1);
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+
+.labs-vault-link a {
+  color: var(--foam-deep);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.labs-vault-link .labs-hash {
+  margin-top: 0;
+}
+
+.labs-folder {
+  color: var(--muted);
+}
+
+.labs-url {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+.labs-url a {
+  color: var(--muted);
+}
+
 @media (max-width: 800px) {
   .labs-grid {
     grid-template-columns: 1fr;

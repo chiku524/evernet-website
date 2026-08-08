@@ -55,6 +55,11 @@ export function clearSession() {
   localStorage.removeItem(ADDR_KEY)
 }
 
+export function setSession(token: string, address: string) {
+  localStorage.setItem(TOKEN_KEY, token)
+  localStorage.setItem(ADDR_KEY, address)
+}
+
 export function sessionAddress(): string | null {
   return localStorage.getItem(ADDR_KEY)
 }
@@ -179,6 +184,26 @@ export function hasSession(address: string): boolean {
   return Boolean(localStorage.getItem(TOKEN_KEY)) && sessionAddress() === address
 }
 
+/**
+ * Ensure a live API session for `address`. Probes `/profile` so a stale or
+ * rotated JWT triggers a fresh SEP-10 login instead of failing mid-upload.
+ */
+export async function ensureSession(
+  address: string,
+  network: StellarNetworkId,
+): Promise<string> {
+  if (hasSession(address)) {
+    try {
+      await getProfile()
+      return address
+    } catch (err) {
+      // api() clears the session on 401; other failures keep the token.
+      if (hasSession(address)) throw err
+    }
+  }
+  return loginWithWallet(address, network)
+}
+
 export async function getProfile(): Promise<ApiProfile> {
   return api<ApiProfile>('/profile')
 }
@@ -241,7 +266,10 @@ export async function uploadObject(
     body: form,
   })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as { error?: string }).error || 'Upload failed')
+  if (!res.ok) {
+    if (res.status === 401) clearSession()
+    throw new Error((data as { error?: string }).error || 'Upload failed')
+  }
   return data as { object: ApiObject; profile: ApiProfile; folders?: string[] }
 }
 
@@ -262,6 +290,7 @@ export async function downloadObject(hash: string): Promise<Blob> {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
   if (!res.ok) {
+    if (res.status === 401) clearSession()
     const data = await res.json().catch(() => ({}))
     throw new Error((data as { error?: string }).error || 'Download failed')
   }

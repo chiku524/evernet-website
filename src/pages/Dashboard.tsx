@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { BuyStorageModal } from '../components/dashboard/BuyStorageModal'
 import { PassphraseModal } from '../components/dashboard/PassphraseModal'
 import BrandMark from '../components/BrandMark'
@@ -27,7 +27,7 @@ import {
   listObjectVersions,
   listProjects,
   listVault,
-  loginWithWallet,
+  ensureSession,
   resetLoginInFlight,
   renameFolder,
   restoreObject,
@@ -115,6 +115,8 @@ type FileRow = { kind: 'file'; object: ApiObject }
 type Row = FolderRow | FileRow
 
 export default function Dashboard() {
+  const [searchParams] = useSearchParams()
+  const focusHash = searchParams.get('hash') || searchParams.get('object')
   const [wallet, setWallet] = useState<string | null>(null)
   const [authed, setAuthed] = useState(false)
   const [profile, setProfile] = useState<ApiProfile | null>(null)
@@ -163,6 +165,7 @@ export default function Dashboard() {
   const pendingDownload = useRef<ApiObject | null>(null)
   /** Bumps to ignore stale connectAndAuth results after cancel / timeout UI reset. */
   const connectGeneration = useRef(0)
+  const focusedHashRef = useRef<string | null>(null)
 
   function clearDragState() {
     dragDepth.current = 0
@@ -209,6 +212,19 @@ export default function Dashboard() {
     if (!authed) return
     void refresh().catch(() => undefined)
   }, [showTrash, authed, refresh])
+
+  useEffect(() => {
+    if (!focusHash || objects.length === 0) return
+    if (focusedHashRef.current === focusHash) return
+    const obj = objects.find((o) => o.hash === focusHash)
+    if (!obj) return
+    focusedHashRef.current = focusHash
+    setShowTrash(Boolean(obj.trashed || obj.deletedAt))
+    setCurrentFolder(normalizeFolderPath(obj.folder || ''))
+    setSelected(obj.hash)
+    setSelectedFolder(null)
+    setRenameValue(obj.name)
+  }, [focusHash, objects])
 
   useEffect(() => {
     void (async () => {
@@ -387,19 +403,14 @@ export default function Dashboard() {
       if (gen !== connectGeneration.current) return
       setWallet(addr)
       saveAddress(addr)
-      if (hasSession(addr)) {
-        await refresh()
-        if (gen === connectGeneration.current) setToast('Wallet profile linked on Evernet')
-        return
-      }
-      if (isWalletConnectSelected()) {
+      if (isWalletConnectSelected() && !hasSession(addr)) {
         setToast(
           'One more step: approve the Evernet sign-in in LOBSTR (≡ → WalletConnect), then return here',
         )
-      } else if (isXBullSelected()) {
+      } else if (isXBullSelected() && !hasSession(addr)) {
         setToast('Approve the sign-in in the xBull window and keep it open until Evernet updates')
       }
-      await loginWithWallet(addr, network)
+      await ensureSession(addr, network)
       await refresh()
       if (gen === connectGeneration.current) setToast('Wallet profile linked on Evernet')
     } catch (err) {

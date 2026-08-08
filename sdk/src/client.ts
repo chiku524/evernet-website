@@ -174,6 +174,7 @@ export class EvernetClient {
     })
     const body = await res.json().catch(() => ({}))
     if (!res.ok) {
+      if (res.status === 401) this.clearSession()
       throw new EvernetError((body as { error?: string }).error || 'Upload failed', {
         status: res.status,
         body,
@@ -213,6 +214,7 @@ export class EvernetClient {
   async download(hash: string): Promise<Blob> {
     const res = await this.raw(`/objects/${hash}`, { headers: this.authHeaders() })
     if (!res.ok) {
+      if (res.status === 401) this.clearSession()
       const body = await res.json().catch(() => ({}))
       throw new EvernetError((body as { error?: string }).error || 'Download failed', {
         status: res.status,
