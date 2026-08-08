@@ -106,7 +106,12 @@ contracts/storage-market/   Soroban Rust contract
 storage-api/                Express API (local + Vercel)
 sdk/                        evernet-sdk (npm)
 src/                        Vite React site, vault, docs, labs
+gitbook/                    GitBook skeleton (product, use cases, services, partners)
 ```
+
+## GitBook
+
+Structured documentation for reviewers and AI evaluation (interest forms, grants, partnerships): [`gitbook/`](gitbook/) — start at [`gitbook/README.md`](gitbook/README.md) / [`gitbook/SUMMARY.md`](gitbook/SUMMARY.md). Publish by connecting that folder to a GitBook space (Git sync).
 
 ## Env
 
