@@ -47,6 +47,7 @@
 
 | Resource | URL |
 |----------|-----|
+| PDF hub | https://evernet.tech/gitbook |
 | GitBook (GitHub) | https://github.com/chiku524/evernet-website/tree/master/gitbook |
 | Full PDF | https://evernet.tech/gitbook/evernet-briefing.pdf |
 | Application PDF | https://evernet.tech/gitbook/evernet-application.pdf |

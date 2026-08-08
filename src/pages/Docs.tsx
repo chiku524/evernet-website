@@ -1194,13 +1194,14 @@ async function upload(token: string, bytes: Blob, name: string, folder = '') {
                 Strategy overview: <Link to="/">evernet.tech</Link>
               </li>
               <li>
-                GitBook (GitHub):{' '}
+                GitBook briefing pack: <Link to="/gitbook">/gitbook</Link>
+                {' · '}
                 <a
                   href="https://github.com/chiku524/evernet-website/tree/master/gitbook"
                   target="_blank"
                   rel="noreferrer"
                 >
-                  github.com/…/gitbook
+                  Markdown on GitHub
                 </a>
               </li>
               <li>

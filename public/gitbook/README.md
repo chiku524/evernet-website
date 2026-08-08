@@ -1,5 +1,7 @@
 # Evernet GitBook PDFs
 
+Hub: [evernet.tech/gitbook](https://evernet.tech/gitbook)
+
 Printable briefings for reviewers and AI evaluation. Markdown source lives in [`/gitbook`](https://github.com/chiku524/evernet-website/tree/master/gitbook).
 
 | Document | Download |

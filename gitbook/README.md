@@ -75,6 +75,7 @@ This book is structured for **human reviewers and AI systems** evaluating Everne
 
 | Format | Link |
 |--------|------|
+| PDF hub | [evernet.tech/gitbook](https://evernet.tech/gitbook) |
 | Markdown (GitHub) | [github.com/chiku524/evernet-website/tree/master/gitbook](https://github.com/chiku524/evernet-website/tree/master/gitbook) |
 | Full briefing PDF | [evernet.tech/gitbook/evernet-briefing.pdf](https://evernet.tech/gitbook/evernet-briefing.pdf) |
 | Application PDF | [evernet.tech/gitbook/evernet-application.pdf](https://evernet.tech/gitbook/evernet-application.pdf) |

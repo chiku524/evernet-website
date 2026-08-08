@@ -322,17 +322,10 @@ export default function Landing() {
             <h2>Building with teams across the ecosystem.</h2>
             <p>
               Commercial validation includes a paid pilot with a German healthcare institution, plus finance and
-              infrastructure partners who need wallet-native, integrity-preserving records. Download the{' '}
+              infrastructure partners who need wallet-native, integrity-preserving records. Browse the{' '}
+              <Link to="/gitbook">GitBook briefing pack</Link> or download the{' '}
               <a href="/gitbook/evernet-partners.pdf" target="_blank" rel="noreferrer">
                 partners PDF
-              </a>{' '}
-              or browse the{' '}
-              <a
-                href="https://github.com/chiku524/evernet-website/tree/master/gitbook"
-                target="_blank"
-                rel="noreferrer"
-              >
-                full GitBook on GitHub
               </a>
               .
             </p>
@@ -524,13 +517,7 @@ export default function Landing() {
             <span>Evernet · evernet.tech · Stellar Testnet live</span>
             <span className="footer-briefing">
               Briefing:{' '}
-              <a
-                href="https://github.com/chiku524/evernet-website/tree/master/gitbook"
-                target="_blank"
-                rel="noreferrer"
-              >
-                GitBook on GitHub
-              </a>
+              <Link to="/gitbook">GitBook hub</Link>
               {' · '}
               <a href="/gitbook/evernet-briefing.pdf" target="_blank" rel="noreferrer">
                 Full PDF

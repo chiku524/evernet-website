@@ -115,6 +115,7 @@ Structured documentation for reviewers and AI evaluation (interest forms, grants
 
 | Format | Link |
 |--------|------|
+| PDF hub | https://evernet.tech/gitbook |
 | Markdown on GitHub | https://github.com/chiku524/evernet-website/tree/master/gitbook |
 | Full briefing PDF | https://evernet.tech/gitbook/evernet-briefing.pdf |
 | Use cases / services / partners PDFs | https://evernet.tech/gitbook/ |
