@@ -12,13 +12,14 @@
     "api:start": "npm --prefix storage-api run start",
     "sdk:build": "npm --prefix sdk run build",
     "sdk:example": "npm --prefix sdk run example:encrypt-upload",
-    "contract:build": "cd contracts/storage-market && cargo build --target wasm32v1-none --release"
+    "contract:build": "cd contracts/storage-market && cargo build --target wasm32v1-none --release",
+    "gitbook:pdf": "node scripts/build-gitbook-pdfs.mjs"
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^2.5.0",
-    "evernet-sdk": "file:sdk",
     "@stellar/stellar-sdk": "^16.2.0",
     "buffer": "^6.0.3",
+    "evernet-sdk": "file:sdk",
     "framer-motion": "^12.43.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -29,6 +30,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "md-to-pdf": "^5.2.5",
     "oxlint": "^1.75.0",
     "typescript": "~6.0.2",
     "vite": "^8.2.0"

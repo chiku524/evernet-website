@@ -71,6 +71,19 @@ This book is structured for **human reviewers and AI systems** evaluating Everne
 | Who we work with | [Partners](partners/README.md) |
 | Try it | [Quick start](getting-started/quick-start.md) |
 
+### GitHub & PDF downloads
+
+| Format | Link |
+|--------|------|
+| Markdown (GitHub) | [github.com/chiku524/evernet-website/tree/master/gitbook](https://github.com/chiku524/evernet-website/tree/master/gitbook) |
+| Full briefing PDF | [evernet.tech/gitbook/evernet-briefing.pdf](https://evernet.tech/gitbook/evernet-briefing.pdf) |
+| Application PDF | [evernet.tech/gitbook/evernet-application.pdf](https://evernet.tech/gitbook/evernet-application.pdf) |
+| Use cases PDF | [evernet.tech/gitbook/evernet-use-cases.pdf](https://evernet.tech/gitbook/evernet-use-cases.pdf) |
+| Services PDF | [evernet.tech/gitbook/evernet-services.pdf](https://evernet.tech/gitbook/evernet-services.pdf) |
+| Partners PDF | [evernet.tech/gitbook/evernet-partners.pdf](https://evernet.tech/gitbook/evernet-partners.pdf) |
+
+Regenerate PDFs after editing markdown: `npm run gitbook:pdf`
+
 ---
 
 ## Live today

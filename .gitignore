@@ -24,6 +24,7 @@ storage-api/data/
 storage-api/.vercel/
 contracts/**/target/
 contracts/.stellar/
+.gitbook-pdf-build/
 
 # Editor directories and files
 .vscode/*

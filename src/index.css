@@ -523,10 +523,6 @@ p {
   color: var(--muted);
 }
 
-.footer-partners {
-  max-width: 42rem;
-}
-
 .strategy-steps {
   display: grid;
   gap: 0;
@@ -836,6 +832,16 @@ p {
   text-align: left;
   color: rgba(255, 255, 255, 0.55);
   font-size: 0.9rem;
+}
+
+.footer-briefing {
+  flex: 1 1 100%;
+  order: 3;
+}
+
+.footer-partners {
+  order: 2;
+  max-width: 42rem;
 }
 
 .footer a {

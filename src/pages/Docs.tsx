@@ -1193,6 +1193,38 @@ async function upload(token: string, bytes: Blob, name: string, folder = '') {
               <li>
                 Strategy overview: <Link to="/">evernet.tech</Link>
               </li>
+              <li>
+                GitBook (GitHub):{' '}
+                <a
+                  href="https://github.com/chiku524/evernet-website/tree/master/gitbook"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  github.com/…/gitbook
+                </a>
+              </li>
+              <li>
+                Briefing PDFs:{' '}
+                <a href="/gitbook/evernet-briefing.pdf" target="_blank" rel="noreferrer">
+                  Full
+                </a>
+                {' · '}
+                <a href="/gitbook/evernet-application.pdf" target="_blank" rel="noreferrer">
+                  Application
+                </a>
+                {' · '}
+                <a href="/gitbook/evernet-use-cases.pdf" target="_blank" rel="noreferrer">
+                  Use cases
+                </a>
+                {' · '}
+                <a href="/gitbook/evernet-services.pdf" target="_blank" rel="noreferrer">
+                  Services
+                </a>
+                {' · '}
+                <a href="/gitbook/evernet-partners.pdf" target="_blank" rel="noreferrer">
+                  Partners
+                </a>
+              </li>
             </ul>
           </section>
 

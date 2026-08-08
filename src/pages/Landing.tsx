@@ -322,7 +322,19 @@ export default function Landing() {
             <h2>Building with teams across the ecosystem.</h2>
             <p>
               Commercial validation includes a paid pilot with a German healthcare institution, plus finance and
-              infrastructure partners who need wallet-native, integrity-preserving records.
+              infrastructure partners who need wallet-native, integrity-preserving records. Download the{' '}
+              <a href="/gitbook/evernet-partners.pdf" target="_blank" rel="noreferrer">
+                partners PDF
+              </a>{' '}
+              or browse the{' '}
+              <a
+                href="https://github.com/chiku524/evernet-website/tree/master/gitbook"
+                target="_blank"
+                rel="noreferrer"
+              >
+                full GitBook on GitHub
+              </a>
+              .
             </p>
           </Reveal>
           <div className="partners-grid" role="list">
@@ -510,6 +522,32 @@ export default function Landing() {
           </Reveal>
           <footer className="footer">
             <span>Evernet · evernet.tech · Stellar Testnet live</span>
+            <span className="footer-briefing">
+              Briefing:{' '}
+              <a
+                href="https://github.com/chiku524/evernet-website/tree/master/gitbook"
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitBook on GitHub
+              </a>
+              {' · '}
+              <a href="/gitbook/evernet-briefing.pdf" target="_blank" rel="noreferrer">
+                Full PDF
+              </a>
+              {' · '}
+              <a href="/gitbook/evernet-use-cases.pdf" target="_blank" rel="noreferrer">
+                Use cases
+              </a>
+              {' · '}
+              <a href="/gitbook/evernet-services.pdf" target="_blank" rel="noreferrer">
+                Services
+              </a>
+              {' · '}
+              <a href="/gitbook/evernet-partners.pdf" target="_blank" rel="noreferrer">
+                Partners
+              </a>
+            </span>
             <span className="footer-partners">
               Partners:{' '}
               {partners.map((p, i) => (

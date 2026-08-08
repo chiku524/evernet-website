@@ -111,7 +111,16 @@ gitbook/                    GitBook skeleton (product, use cases, services, part
 
 ## GitBook
 
-Structured documentation for reviewers and AI evaluation (interest forms, grants, partnerships): [`gitbook/`](gitbook/) — start at [`gitbook/README.md`](gitbook/README.md) / [`gitbook/SUMMARY.md`](gitbook/SUMMARY.md). Publish by connecting that folder to a GitBook space (Git sync).
+Structured documentation for reviewers and AI evaluation (interest forms, grants, partnerships): [`gitbook/`](gitbook/) — start at [`gitbook/README.md`](gitbook/README.md) / [`gitbook/SUMMARY.md`](gitbook/SUMMARY.md).
+
+| Format | Link |
+|--------|------|
+| Markdown on GitHub | https://github.com/chiku524/evernet-website/tree/master/gitbook |
+| Full briefing PDF | https://evernet.tech/gitbook/evernet-briefing.pdf |
+| Use cases / services / partners PDFs | https://evernet.tech/gitbook/ |
+| Regenerate PDFs | `npm run gitbook:pdf` |
+
+Publish the markdown space by connecting `gitbook/` to a GitBook Git sync if you want a hosted GitBook UI.
 
 ## Env
 
